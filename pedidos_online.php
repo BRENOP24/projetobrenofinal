@@ -1,0 +1,357 @@
+<?php
+require_once 'config/conexao.php';
+
+try {
+    // 1. Usamos LEFT JOIN em clientes também (caso o pedido online venha sem cadastro completo)
+    // 2. O PostgreSQL é rigoroso com o que está dentro do IN ('Maiúsculas/Minúsculas')
+    $sql = "SELECT 
+                p.*, 
+                c.nome AS cliente_nome, 
+                c.telefone AS cliente_telefone,
+                fp.descricao AS nome_pagamento
+            FROM pedidos_online p 
+            LEFT JOIN clientes c ON p.cliente_id = c.id 
+            LEFT JOIN formas_pagamento fp ON p.forma_pagamento_id = fp.id
+            WHERE p.status NOT IN ('Finalizado', 'Cancelado')
+            ORDER BY p.data_pedido DESC";
+
+    $pedidos = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+
+} catch (PDOException $e) {
+    // Caso a tabela clientes_online tenha nome diferente no seu Postgres
+    die("Erro ao carregar pedidos online: " . $e->getMessage());
+}
+?>
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Painel de Pedidos - Restaurante</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        
+        .card-pedido { background: white; border-radius: 8px; padding: 15px; margin-bottom: 15px; border-left: 5px solid #ffc107; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .status-badge { padding: 5px 10px; border-radius: 15px; font-size: 12px; font-weight: bold; }
+        
+        /* Cores dos Status conforme o seu Enum do Banco */
+        .Pendente { color: #856404; background: #fff3cd; }
+        .Confirmado { color: #0c5460; background: #d1ecf1; }
+        .Em\ Preparo { color: #004085; background: #cce5ff; }
+        .Saiu\ para\ Entrega { color: #155724; background: #d4edda; }
+        
+        /* Tipos de Entrega */
+        .tipo-entrega { padding: 8px; border-radius: 5px; font-size: 14px; margin-bottom: 10px; display: inline-block; font-weight: bold; }
+        .tipo-delivery { background: #e8f4fd; color: #0d6efd; border: 1px solid #b6d4fe; }
+        .tipo-balcao { background: #f8d7da; color: #842029; border: 1px solid #f5c2c7; }
+
+        .endereco-box { background: #f8f9fa; padding: 10px; border-radius: 5px; font-size: 14px; margin-bottom: 10px; border-left: 3px solid #ccc; }
+
+        .info-pagamento { background: #e9ecef; padding: 5px 10px; border-radius: 5px; font-size: 14px; display: inline-block; margin-top: 5px; border: 1px solid #dee2e6; }
+        .badge-troco { background: #fff3cd; color: #856404; padding: 5px 10px; border-radius: 5px; font-size: 14px; font-weight: bold; border: 1px solid #ffeeba; display: inline-block; margin-top: 5px; }
+
+        .btn-whats { background: #25d366; color: white; padding: 5px 10px; text-decoration: none; border-radius: 5px; font-size: 13px; display: inline-block; }
+        .btn-acao { border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 5px; margin-top: 10px; color: white; }
+        .btn-detalhes { background: #6c757d; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
+        .btn-cancelar { background: #dc3545; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <audio id="audioAlerta" src="alerta/alerta_pedido.mp3" preload="auto"></audio>
+    <div class="header">
+        <h1 style="margin: 0;">🛎️ Pedidos Ativos</h1>
+        <div>Atualização automática em <span id="contador">30</span>s</div>
+    </div>
+    
+    <?php if(empty($pedidos)): ?>
+        <div style="text-align:center; padding: 50px; background: white; border-radius: 8px; color: #666;">
+            <i class="fas fa-inbox fa-3x" style="color: #ccc; margin-bottom: 15px;"></i>
+            <h2>Nenhum pedido no momento.</h2>
+            <p>Fique de olho, logo chegam novos pedidos!</p>
+        </div>
+    <?php endif; ?>
+
+    <?php foreach($pedidos as $p): ?>
+        <?php 
+            // Define a cor da borda baseado no status
+            $corBorda = '#ffc107'; // Pendente
+            if($p['status'] == 'Confirmado') $corBorda = '#17a2b8';
+            if($p['status'] == 'Em Preparo') $corBorda = '#007bff';
+            if($p['status'] == 'Saiu para Entrega') $corBorda = '#28a745';
+        ?>
+        <div class="card-pedido" style="border-left-color: <?= $corBorda ?>;">
+            <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 style="margin:0;">#<?= $p['id'] ?> - <?= htmlspecialchars($p['cliente_nome']) ?></h3>
+                <span class="status-badge <?= str_replace(' ', '\ ', $p['status']) ?>"><?= $p['status'] ?></span>
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <small style="color: #666;"><i class="far fa-clock"></i> Pedido feito às <?= date('H:i', strtotime($p['data_pedido'])) ?></small>
+            </div>
+
+            <?php if($p['tipo_entrega'] === 'retirada'): ?>
+                <div class="tipo-entrega tipo-balcao">
+                    <i class="fas fa-store"></i> Cliente Retira no Local
+                </div>
+            <?php else: ?>
+                <div class="tipo-entrega tipo-delivery">
+                    <i class="fas fa-motorcycle"></i> Entrega
+                </div>
+                <div class="endereco-box">
+                    <strong>Endereço:</strong> <?= htmlspecialchars($p['endereco_completo']) ?><br>
+                    <strong>Bairro:</strong> <?= htmlspecialchars($p['bairro_entrega']) ?><br>
+                    <small>Taxa de Entrega: R$ <?= number_format($p['taxa_entrega'], 2, ',', '.') ?></small>
+                </div>
+            <?php endif; ?>
+            
+            <div style="margin: 10px 0;">
+                <div class="info-pagamento">
+                    <i class="fas fa-wallet"></i> <b>Pagamento:</b> <?= $p['nome_pagamento'] ?? 'Não informado' ?>
+                </div>
+
+                <?php if(!empty($p['precisa_troco']) && $p['precisa_troco'] > 0): ?>
+                    <div class="badge-troco">
+                        <i class="fas fa-money-bill-wave"></i> Troco para: <b>R$ <?= number_format($p['precisa_troco'], 2, ',', '.') ?></b>
+                    </div>
+                <?php endif; ?>
+            </div>
+            
+            <div style="display:flex; justify-content: space-between; align-items: center; background: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
+                <div style="font-size: 18px;"><strong>Total: R$ <?= number_format($p['valor_total'], 2, ',', '.') ?></strong></div>
+                <button class="btn-detalhes" onclick="verDetalhes(<?= $p['id'] ?>)">
+                    <i class="fa fa-list"></i> Ver Itens
+                </button>
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <?php if(!empty($p['cliente_telefone'])): ?>
+                    <a href="https://wa.me/55<?= preg_replace('/\D/', '', $p['cliente_telefone']) ?>" class="btn-whats" target="_blank">
+                        <i class="fab fa-whatsapp"></i> Chamar no WhatsApp
+                    </a>
+                <?php endif; ?>
+            </div>
+
+            <div style="border-top: 1px solid #eee; padding-top: 10px; display: flex; flex-wrap: wrap; gap: 5px; justify-content: space-between;">
+                <div>
+                    <?php if($p['status'] == 'Pendente'): ?>
+                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Confirmado')" class="btn-acao" style="background: #17a2b8;">Aceitar Pedido</button>
+                    <?php endif; ?>
+
+                    <?php if($p['status'] == 'Confirmado'): ?>
+                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Em Preparo')" class="btn-acao" style="background: #007bff;">Mandar p/ Cozinha</button>
+                    <?php endif; ?>
+
+                    <?php if($p['status'] == 'Em Preparo'): ?>
+                        <?php if($p['tipo_entrega'] === 'retirada'): ?>
+                            <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Finalizado')" class="btn-acao" style="background: #28a745;">Cliente Retirou (Finalizar)</button>
+                        <?php else: ?>
+                            <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Saiu para Entrega')" class="btn-acao" style="background: #ffc107; color:#333;"><i class="fas fa-motorcycle"></i> Despachar Entrega</button>
+                        <?php endif; ?>
+                    <?php endif; ?>
+
+                    <?php if($p['status'] == 'Saiu para Entrega'): ?>
+                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Finalizado')" class="btn-acao" style="background: #28a745;">Entrega Concluída (Finalizar)</button>
+                    <?php endif; ?>
+                </div>
+
+                <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Cancelado')" class="btn-cancelar"><i class="fas fa-times"></i> Cancelar</button>
+            </div>
+        </div>
+    <?php endforeach; ?>
+
+    <div id="modalDetalhes" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
+        <div style="background:white; max-width:400px; margin:50px auto; padding:20px; border-radius:10px;">
+            <h3>📋 Itens do Pedido</h3>
+            <div id="conteudoItens" style="max-height: 300px; overflow-y: auto; margin: 15px 0;">Carregando...</div>
+            <hr>
+            <button onclick="fecharModal()" style="width:100%; padding:10px; background:#6c757d; color:white; border:none; border-radius:5px; cursor:pointer;">Fechar</button>
+        </div>
+    </div>
+
+    <script>
+        // Funções para o Modal
+        function verDetalhes(id) {
+            document.getElementById('modalDetalhes').style.display = 'block';
+            const conteudo = document.getElementById('conteudoItens');
+            conteudo.innerHTML = "Carregando...";
+
+            fetch('buscar_itens.php?id=' + id)
+                .then(res => res.json())
+                .then(itens => {
+                    if(itens.erro) {
+                        conteudo.innerHTML = `<span style='color:red;'>${itens.erro}</span>`;
+                        return;
+                    }
+                    if(itens.length === 0) {
+                        conteudo.innerHTML = "Nenhum item encontrado.";
+                        return;
+                    }
+
+                    let html = '<ul style="list-style:none; padding:0;">';
+                    itens.forEach(item => {
+                        // Trata o nome do produto caso você tenha feito JOIN na busca
+                        let nomeProduto = item.produto_nome || item.nome_produto || "Produto ID " + item.produto_id;
+                        let subtotal = parseFloat(item.preco_unitario) * parseInt(item.quantidade);
+
+                        html += `<li style="padding:10px 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between;">
+                                    <span><b>${item.quantidade}x</b> ${nomeProduto}</span>
+                                    <span>R$ ${subtotal.toFixed(2).replace('.', ',')}</span>
+                                 </li>`;
+                    });
+                    html += '</ul>';
+                    conteudo.innerHTML = html;
+                })
+                .catch(err => {
+                    console.error(err);
+                    conteudo.innerHTML = "Erro ao comunicar com o servidor.";
+                });
+        }
+
+        function fecharModal() {
+            document.getElementById('modalDetalhes').style.display = 'none';
+        }
+
+        // Função de Atualização de Status
+        function atualizarStatus(id, novoStatus) {
+            if(!confirm("Mudar status do pedido #" + id + " para '" + novoStatus + "'?")) return;
+            
+            const formData = new FormData();
+            formData.append('id', id);
+            formData.append('status', novoStatus);
+
+            fetch('atualizar_status.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(res => {
+                if(res.sucesso) {
+                    location.reload();
+                } else {
+                    alert("Erro ao atualizar: " + (res.erro || "Desconhecido"));
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert("Erro de comunicação.");
+            });
+        }
+
+        // Relógio de Atualização Automática
+        let tempo = 30;
+        setInterval(() => {
+            tempo--;
+            document.getElementById('contador').innerText = tempo;
+            if(tempo <= 0) location.reload();
+        }, 1000);
+    </script>
+
+
+
+
+
+<script>
+    // 1. Configurações iniciais de Áudio e Contagem
+    const somAlerta = document.getElementById('audioAlerta');
+    let totalPedidosAntigo = <?= count($pedidos) ?>;
+
+    // 2. Função de Atualização de Status (A que você já tinha)
+    function atualizarStatus(id, novoStatus) {
+        if(!confirm("Mudar status do pedido #" + id + " para '" + novoStatus + "'?")) return;
+        
+        const formData = new FormData();
+        formData.append('id', id);
+        formData.append('status', novoStatus);
+
+        fetch('atualizar_status.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(res => {
+            if(res.sucesso) {
+                location.reload();
+            } else {
+                alert("Erro ao atualizar: " + (res.erro || "Desconhecido"));
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            alert("Erro de comunicação.");
+        });
+    }
+
+    // 3. Verificação de novos pedidos (Som de Alerta)
+function verificarNovosPedidos() {
+    fetch('checar_total_pedidos.php')
+        .then(res => res.json())
+        .then(data => {
+            // Se houver 1 ou mais pedidos pendentes, o som toca
+            if(data.total_pendentes > 0) {
+                if (somAlerta) {
+                    somAlerta.loop = true; // Faz o som repetir
+                    somAlerta.play().catch(e => console.log("Clique na página para ativar o som."));
+                }
+            } else {
+                // Se não houver nenhum pendente, para o som
+                if (somAlerta) {
+                    somAlerta.pause();
+                    somAlerta.currentTime = 0; // Volta o som para o início
+                }
+            }
+        })
+        .catch(err => console.error("Erro ao checar:", err));
+}
+
+
+    // 4. Funções do Modal de Detalhes (Mantidas como estavam)
+    function verDetalhes(id) {
+        document.getElementById('modalDetalhes').style.display = 'block';
+        const conteudo = document.getElementById('conteudoItens');
+        conteudo.innerHTML = "Carregando...";
+
+        fetch('buscar_itens.php?id=' + id)
+            .then(res => res.json())
+            .then(itens => {
+                if(itens.erro) {
+                    conteudo.innerHTML = `<span style='color:red;'>${itens.erro}</span>`;
+                    return;
+                }
+                let html = '<ul style="list-style:none; padding:0;">';
+                itens.forEach(item => {
+                    let nomeProduto = item.produto_nome || item.nome_produto || "Produto ID " + item.produto_id;
+                    let subtotal = parseFloat(item.preco_unitario) * parseInt(item.quantidade);
+                    html += `<li style="padding:10px 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between;">
+                                <span><b>${item.quantidade}x</b> ${nomeProduto}</span>
+                                <span>R$ ${subtotal.toFixed(2).replace('.', ',')}</span>
+                             </li>`;
+                });
+                html += '</ul>';
+                conteudo.innerHTML = html;
+            });
+    }
+
+    function fecharModal() {
+        document.getElementById('modalDetalhes').style.display = 'none';
+    }
+
+    // --- INICIALIZAÇÃO DOS INTERVALOS ---
+
+    // Checa se há novos pedidos a cada 30 segundos
+    setInterval(verificarNovosPedidos, 5000);
+
+    // Contador regressivo para atualizar a página a cada 30 segundos
+    setInterval(() => {
+        tempo--;
+        const elementoContador = document.getElementById('contador');
+        if(elementoContador) {
+            elementoContador.innerText = tempo;
+        }
+        if(tempo <= 0) location.reload();
+    }, 1000);
+</script>
+
+
+</body>
+</html>
