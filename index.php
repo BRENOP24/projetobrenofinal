@@ -75,10 +75,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </button>
             </form>
 
-            <footer class="login-footer">
-                <p>Não tem uma conta?</p>
-                <a href="cadastro.php" class="link-register">Criar novo usuário</a>
-            </footer>
         </div>
     </div>
 </body>
