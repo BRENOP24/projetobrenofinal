@@ -1,13 +1,13 @@
 <?php
-$host = 'localhost';
-$port = '5432'; // Porta padrão do PostgreSQL
-$db   = 'projeto_breno';
-$user = 'postgres'; // Usuário padrão do Postgres
-$pass = 'root';     // Senha definida por você
+$host = getenv('DB_HOST') ?: 'localhost';
+$port = getenv('DB_PORT') ?: '5432';
+$db   = getenv('DB_DATABASE') ?: 'projeto_breno';
+$user = getenv('DB_USER') ?: 'postgres';
+$pass = getenv('DB_PASSWORD') ?: 'root';
 
 try {
     // No PostgreSQL, usamos 'pgsql' no início da string de conexão
-    $dsn = "pgsql:host=$host;port=$port;dbname=$db";
+    $dsn = "pgsql:host=$host;port=$port;dbname=$db;connect_timeout=5";
     
     $pdo = new PDO($dsn, $user, $pass);
     
