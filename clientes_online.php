@@ -63,7 +63,6 @@ try {
             <a href="dashboard.php" class="btn-voltar" style="text-decoration:none;font-weight:500;">⬅ Voltar ao Painel</a>
         </div>
 
-        <!-- BUSCA -->
         <form method="GET" class="search-box">
             <input type="text" name="buscar" placeholder="Buscar por nome ou CPF" 
                    value="<?= isset($_GET['buscar']) ? htmlspecialchars($_GET['buscar']) : '' ?>">
@@ -74,6 +73,8 @@ try {
         </form>
 
         <hr style="margin: 20px 0; opacity: 0.2;">
+
+        <?= $mensagem ?>
 
         <h3>Lista de Clientes Online</h3>
         <table>
@@ -91,13 +92,17 @@ try {
                 <?php if(count($clientes_online) > 0): ?>
                     <?php foreach ($clientes_online as $c): ?>
                     <tr>
-                        <td><strong><?= htmlspecialchars($c['nome']) ?></strong></td>
-                        <td><?= htmlspecialchars($c['cpf']) ?></td>
-                        <td><?= htmlspecialchars($c['telefone']) ?></td>
+                        <td><strong><?= htmlspecialchars($c['nome'] ?? '') ?></strong></td>
+                        <td><?= htmlspecialchars($c['cpf'] ?? '') ?></td>
+                        <td><?= htmlspecialchars($c['telefone'] ?? '') ?></td>
                         <td>
-                            <?= htmlspecialchars($c['endereco']) ?>, 
-                            <?= htmlspecialchars($c['numero']) ?> - 
-                            <?= htmlspecialchars($c['bairro']) ?>
+                            <?php if (empty($c['endereco']) && empty($c['bairro'])): ?>
+                                <span style="color: #d9381e; font-weight: bold;">📍 Retirada no Balcão</span>
+                            <?php else: ?>
+                                <?= htmlspecialchars($c['endereco'] ?? '') ?>, 
+                                <?= htmlspecialchars($c['numero'] ?? '') ?> - 
+                                <?= htmlspecialchars($c['bairro'] ?? '') ?>
+                            <?php endif; ?>
                         </td>
                         <td><?= date('d/m/Y H:i', strtotime($c['data_cadastro'])) ?></td>
                         <td><span class="badge-online">Online</span></td>
