@@ -1,0 +1,120 @@
+        /* Reset e Estrutura Base */
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; }
+        body { background: #f1f5f9; overflow: hidden; }
+
+        .layout {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* Sidebar Dinâmica */
+        .sidebar {
+            width: 260px;
+            background: #1e293b;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+        }
+
+        .logo {
+            padding: 25px 20px;
+            font-size: 1.3rem;
+            text-align: center;
+            background: #0f172a;
+            color: #38bdf8;
+            border-bottom: 1px solid #334155;
+        }
+
+        .nav-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .nav-menu { list-style: none; }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            color: #cbd5e1;
+            text-decoration: none;
+            border-radius: 8px;
+            margin-bottom: 5px;
+            transition: 0.2s;
+        }
+
+        .nav-link:hover { background: #334155; color: white; }
+
+        .nav-link i:first-child { width: 25px; margin-right: 10px; }
+        .arrow { margin-left: auto; font-size: 0.8rem; transition: 0.3s; }
+
+        /* Submenu Acordeão */
+        .submenu {
+            list-style: none;
+            padding-left: 35px;
+            display: none; /* Controlado pelo JS */
+            margin-bottom: 10px;
+        }
+
+        .submenu li a {
+            display: block;
+            padding: 8px 10px;
+            color: #94a3b8;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: 0.2s;
+            border-radius: 4px;
+        }
+
+        .submenu li a:hover { color: #38bdf8; background: rgba(56, 189, 248, 0.1); }
+
+        /* Área de Conteúdo */
+        .content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .topo {
+            height: 70px;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            padding: 0 30px;
+            justify-content: space-between;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .user-info h2 { font-size: 1.1rem; color: #1e293b; }
+        .badge { background: #38bdf8; color: white; padding: 3px 10px; border-radius: 20px; font-size: 0.75rem; }
+
+        /* Iframe Dinâmico (estilo de card) */
+        .dashboard-content {
+            flex: 1;
+            padding: 20px;
+            background: #f1f5f9;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 12px;
+            background: white;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        }
+
+        .btn-sair { color: #f87171 !important; font-weight: bold; }
+        
+        .site-footer {
+            padding: 10px;
+            text-align: center;
+            font-size: 0.75rem;
+            background: #0f172a;
+            color: #64748b;
+        }

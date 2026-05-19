@@ -1,0 +1,248 @@
+/* =========================================
+   1. Reset e Configurações Globais
+   ========================================= */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Poppins', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+body {
+    /* O '../' sai da pasta 'css' e o 'img/' entra na pasta da sua logo */
+    background: url('../img/logo.png') no-repeat center center fixed; 
+    background-size: cover; /* Faz a imagem preencher a tela toda */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+}
+
+/* Container principal - Atua como uma máscara escura sobre a logo */
+.main-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    height: 100vh;
+    padding: 20px;
+    /* Camada de contraste: preto com 50% de transparência */
+    background-color: rgba(0, 0, 0, 0.5); 
+}
+
+/* =========================================
+   2. A Caixa de Login (Com efeito de transparência)
+   ========================================= */
+.login-box {
+    /* Fundo branco quase sólido para manter a leitura perfeita */
+    background: rgba(255, 255, 255, 0.95); 
+    backdrop-filter: blur(10px); /* Desfoca levemente a logo atrás da caixa */
+    width: 100%;
+    max-width: 480px;
+    padding: 50px 40px;
+    border-radius: 20px;
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
+    text-align: center;
+    position: relative;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* =========================================
+   3. Cabeçalho e Tipografia
+   ========================================= */
+.login-header {
+    margin-bottom: 40px;
+}
+
+.logo-icon {
+    font-size: 3rem;
+    color: #007bff;
+    margin-bottom: 15px;
+    display: inline-block;
+}
+
+.login-header h1 {
+    color: #1a1a1a;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+}
+
+.login-header .subtitle {
+    color: #6c757d;
+    font-size: 16px;
+    font-weight: 400;
+}
+
+.error-banner {
+    background-color: #fff2f2;
+    color: #dc3545;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 25px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    border: 1px solid #ffcccc;
+}
+
+/* =========================================
+   4. Formulário e Campos
+   ========================================= */
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.input-container {
+    position: relative;
+    width: 100%;
+}
+
+.input-icon {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #adb5bd;
+    font-size: 1.1rem;
+    transition: color 0.3s ease;
+}
+
+input[type="text"], 
+input[type="password"] {
+    width: 100%;
+    padding: 16px 16px 16px 50px;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    font-size: 16px;
+    color: #495057;
+    background-color: #fdfdfd;
+    outline: none;
+    transition: all 0.3s ease;
+}
+
+input:focus {
+    border-color: #007bff;
+    background-color: #ffffff;
+    box-shadow: 0 0 0 4px rgba(0, 123, 255, 0.1);
+}
+
+input:focus + .input-icon {
+    color: #007bff;
+}
+
+/* =========================================
+   5. Botão de Ação
+   ========================================= */
+.btn-primary {
+    width: 100%;
+    padding: 16px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 17px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 6px rgba(0, 123, 255, 0.15);
+    margin-top: 10px;
+}
+
+.btn-primary:hover {
+    background-color: #0069d9;
+    transform: translateY(-2px);
+    box-shadow: 0 7px 14px rgba(0, 123, 255, 0.25);
+}
+
+.btn-primary:active {
+    transform: translateY(1px);
+    box-shadow: 0 3px 5px rgba(0, 123, 255, 0.15);
+}
+
+.btn-primary i {
+    transition: transform 0.3s ease;
+}
+
+.btn-primary:hover i {
+    transform: translateX(5px);
+}
+
+/* =========================================
+   6. Rodapé e Links
+   ========================================= */
+.login-footer {
+    margin-top: 40px;
+    font-size: 15px;
+    color: #6c757d;
+}
+
+.link-register {
+    color: #007bff;
+    text-decoration: none;
+    font-weight: 600;
+    position: relative;
+    display: inline-block;
+    transition: color 0.3s ease;
+}
+
+.link-register:hover {
+    color: #0056b3;
+}
+
+.link-register::after {
+    content: '';
+    position: absolute;
+    width: 100%;
+    transform: scaleX(0);
+    height: 2px;
+    bottom: -2px;
+    left: 0;
+    background-color: #0056b3;
+    transform-origin: bottom right;
+    transition: transform 0.3s ease-out;
+}
+
+.link-register:hover::after {
+    transform: scaleX(1);
+    transform-origin: bottom left;
+}
+
+/* =========================================
+   7. Animações e Responsividade
+   ========================================= */
+@keyframes popIn {
+    0% {
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.animate-pop-in {
+    animation: popIn 0.6s ease-out forwards;
+}
+
+@media (max-width: 480px) {
+    .login-box {
+        padding: 40px 25px;
+        border-radius: 15px;
+        max-width: 90%;
+    }
+    .login-header h1 {
+        font-size: 24px;
+    }
+}

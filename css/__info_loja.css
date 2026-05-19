@@ -1,0 +1,26 @@
+/* ===== BLOCO INFO LOJA ===== */
+
+.info-loja {
+    background: #fff;
+    margin: 20px auto;
+    padding: 20px;
+    border-radius: 12px;
+    max-width: 800px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+}
+
+.info-item {
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.info-item strong {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--cor-tema);
+    font-size: 15px;
+}

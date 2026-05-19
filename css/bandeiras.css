@@ -1,0 +1,153 @@
+/* ===== BASE ===== */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f6f9;
+    margin: 0;
+    padding: 20px;
+}
+
+/* ===== CONTAINER ===== */
+.container-fluid {
+    max-width: 800px;
+    margin: auto;
+    background: #fff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* ===== HEADER ===== */
+.header-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #eee;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+}
+
+.btn-voltar {
+    background: #bdccda;
+    color: #fff;
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+/* ===== FORMULÁRIO ===== */
+.form-inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: flex-end;
+    background: #f8f9fa;
+    padding: 15px;
+    margin-bottom: 25px;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 250px;
+}
+
+.form-group label {
+    font-size: 0.8rem;
+    font-weight: bold;
+    margin-bottom: 4px;
+    color: #666;
+}
+
+.form-control {
+    padding: 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+/* ===== BOTÕES ===== */
+.btn-submit {
+    background: #28a745;
+    color: #fff;
+    border: none;
+    padding: 9px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.btn-submit.btn-edit-mode {
+    background: #007bff;
+}
+
+.btn-toggle-filter {
+    font-size: 0.85rem;
+    text-decoration: none;
+    color: #007bff;
+    padding: 5px 10px;
+    border: 1px solid #007bff;
+    border-radius: 4px;
+}
+
+/* ===== FILTRO ===== */
+.filter-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+/* ===== TABELA ===== */
+.table-resumo {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.table-resumo th {
+    background: #f8f9fa;
+    padding: 10px;
+    text-align: left;
+    border-bottom: 2px solid #dee2e6;
+}
+
+.table-resumo td {
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+/* ===== ESTADOS ===== */
+.tr-inativo {
+    opacity: 0.7;
+    background: #fff5f5;
+}
+
+/* ===== AÇÕES ===== */
+.btn-acao {
+    display: inline-block;
+    text-decoration: none;
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    border-radius: 4px;
+    border: 1px solid;
+}
+
+.btn-edit {
+    border-color: #007bff;
+    color: #007bff;
+    margin-right: 5px;
+}
+
+.btn-status-off {
+    border-color: #dc3545;
+    color: #dc3545;
+}
+
+.btn-status-on {
+    border-color: #28a745;
+    color: #28a745;
+}

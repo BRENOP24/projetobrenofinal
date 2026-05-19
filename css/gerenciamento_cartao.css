@@ -1,0 +1,220 @@
+/* =========================================
+   1. Variáveis e Reset
+   ========================================= */
+:root {
+    --primary: #007bff;
+    --primary-hover: #0056b3;
+    --success: #28a745;
+    --danger: #dc3545;
+    --gray-bg: #f8f9fa;
+    --gray-border: #e9ecef;
+    --text-main: #334155;
+    --text-muted: #64748b;
+    --shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body { 
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; 
+    background-color: #f1f5f9; 
+    color: var(--text-main);
+    padding: 25px; 
+    line-height: 1.5;
+}
+
+/* =========================================
+   2. Containers
+   ========================================= */
+.container-fluid { 
+    max-width: 1240px; 
+    margin: auto; 
+    background: #fff; 
+    padding: 30px; 
+    border-radius: 12px; 
+    box-shadow: var(--shadow); 
+}
+
+.header-flex { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    margin-bottom: 25px; 
+    border-bottom: 1px solid var(--gray-border); 
+    padding-bottom: 20px; 
+}
+
+.header-flex h2 {
+    font-size: 1.5rem;
+    color: #1e293b;
+}
+
+/* =========================================
+   3. Barra de Ferramentas / Filtros
+   ========================================= */
+.bar-tools { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: flex-end; 
+    background: var(--gray-bg); 
+    padding: 20px; 
+    border-radius: 10px; 
+    border: 1px solid var(--gray-border); 
+    margin-bottom: 25px; 
+    flex-wrap: wrap; 
+    gap: 20px; 
+}
+
+.form-group { display: flex; flex-direction: column; gap: 8px; }
+.form-group label { 
+    font-size: 0.75rem; 
+    font-weight: 700; 
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.form-control { 
+    padding: 10px 14px; 
+    border: 1px solid #cbd5e1; 
+    border-radius: 6px; 
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.form-control:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+    outline: none;
+}
+
+/* =========================================
+   4. Botões
+   ========================================= */
+.btn-vincular { 
+    background: var(--primary); 
+    color: white; 
+    border: none; 
+    padding: 11px 24px; 
+    border-radius: 6px; 
+    cursor: pointer; 
+    font-weight: 600;
+    transition: background 0.2s, transform 0.1s;
+}
+
+.btn-vincular:hover { 
+    background: var(--primary-hover); 
+}
+
+.btn-vincular:active { transform: scale(0.98); }
+
+.btn-voltar { 
+    background: #fff; 
+    color: var(--text-muted); 
+    text-decoration: none; 
+    padding: 8px 16px; 
+    border-radius: 6px; 
+    font-size: 0.85rem; 
+    border: 1px solid #cbd5e1;
+    transition: all 0.2s;
+}
+
+.btn-voltar:hover { 
+    background: var(--gray-bg);
+    color: var(--text-main);
+}
+
+/* =========================================
+   5. Tabela
+   ========================================= */
+.table-resumo { width: 100%; border-collapse: collapse; margin-top: 10px; }
+
+.table-resumo th { 
+    background: #fff; 
+    padding: 14px 12px; 
+    text-align: left; 
+    border-bottom: 2px solid var(--gray-border); 
+    font-size: 0.8rem; 
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+}
+
+.table-resumo td { 
+    padding: 14px 12px; 
+    border-bottom: 1px solid var(--gray-border); 
+    font-size: 0.95rem; 
+}
+
+.table-resumo tr:hover td {
+    background-color: #f8fafc; /* Efeito de destaque na linha */
+}
+
+/* =========================================
+   6. Status e Badges
+   ========================================= */
+.badge { 
+    padding: 6px 10px; 
+    border-radius: 20px; /* Badges mais arredondadas estilo pill */
+    font-size: 0.7rem; 
+    font-weight: 700; 
+}
+
+.badge-manual { background: #dbeafe; color: #1e40af; }
+.badge-online { background: #dcfce7; color: #166534; }
+
+.status-ok { color: var(--success); font-weight: 600; }
+.status-pendente { color: var(--danger); font-weight: 500; }
+
+/* =========================================
+   7. Card de Resumo Financeiro
+   ========================================= */
+.container-resumo { 
+    margin-top: 40px; 
+    display: flex; 
+    justify-content: flex-end; 
+}
+
+.card-resumo { 
+    background: #fff; 
+    border: 1px solid var(--gray-border); 
+    border-radius: 12px; 
+    width: 380px; 
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+}
+
+.card-resumo-header { 
+    background: var(--gray-bg); 
+    padding: 15px 20px; 
+    border-bottom: 1px solid var(--gray-border); 
+    font-weight: 700; 
+    color: #1e293b;
+}
+
+.resumo-item { 
+    display: flex; 
+    justify-content: space-between; 
+    padding: 12px 20px; 
+    border-bottom: 1px solid #f8fafc; 
+    font-size: 0.95rem; 
+}
+
+.resumo-total { 
+    background: #f1f5f9; 
+    font-weight: 800; 
+    font-size: 1.1rem; 
+    color: var(--primary); 
+    border-top: 2px solid var(--gray-border);
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+    .bar-tools { flex-direction: column; align-items: stretch; }
+    .container-resumo { justify-content: center; }
+    .card-resumo { width: 100%; }
+}

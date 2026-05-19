@@ -1,0 +1,121 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f7f6;
+    margin: 0;
+    padding: 20px;
+}
+
+.container {
+    max-width: 800px;
+    margin: auto;
+    background: white;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+h2 {
+    color: #333;
+    border-bottom: 2px solid #007bff;
+    padding-bottom: 10px;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+input,
+select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    box-sizing: border-box;
+}
+
+button {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    width: 100%;
+    font-size: 16px;
+}
+
+button:hover {
+    background: #0056b3;
+}
+
+.msg {
+    padding: 10px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+}
+
+.msg-success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.required {
+    color: #e74c3c; /* Vermelho para destaque */
+    margin-left: 4px;
+}
+
+/* Opcional: Destacar a borda do input quando for obrigatório e estiver vazio */
+input:required {
+    border-left: 3px solid #007bff;
+}
+
+
+/* Estrutura do Cabeçalho */
+.header-section {
+    display: flex;
+    justify-content: space-between; /* Título na esquerda, Botão na direita */
+    align-items: center;
+    border-bottom: 2px solid #eee;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+}
+
+.btn-voltar {
+    background: #6c757d;
+    color: #fff;
+    text-decoration: none;
+    padding: 8px 15px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    transition: 0.3s;
+    font-weight: bold;
+}
+
+.btn-voltar:hover {
+    background: #5a6268;
+}
+
+
+.box-empresa {
+    position: relative;
+    background: #fff;
+    border-radius: 12px;
+    padding: 30px;
+}
+
+.voltar-dashboard {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    font-weight: bold;
+    text-decoration: none;
+    color: #5a2ea6;
+}
+
+
