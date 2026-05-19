@@ -372,7 +372,21 @@ body{
 <body>
 
 <header class="cabecalho">
+<!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-VCJ8JQBD87"></script>
 
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      
+      function gtag(){
+        dataLayer.push(arguments);
+      }
+
+      gtag('js', new Date());
+
+      gtag('config', 'G-VCJ8JQBD87');
+    </script>
+   
     <h1>
         <?= htmlspecialchars($empresa['nome_fantasia']) ?>
     </h1>
