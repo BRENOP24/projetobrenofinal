@@ -2,15 +2,14 @@
 require_once 'config/conexao.php';
 
 try {
-    // 1. Usamos LEFT JOIN em clientes também (caso o pedido online venha sem cadastro completo)
-    // 2. O PostgreSQL é rigoroso com o que está dentro do IN ('Maiúsculas/Minúsculas')
+    
     $sql = "SELECT 
                 p.*, 
                 c.nome AS cliente_nome, 
                 c.telefone AS cliente_telefone,
                 fp.descricao AS nome_pagamento
             FROM pedidos_online p 
-            LEFT JOIN clientes c ON p.cliente_id = c.id 
+            LEFT JOIN clientes_online c ON p.cliente_id = c.id 
             LEFT JOIN formas_pagamento fp ON p.forma_pagamento_id = fp.id
             WHERE p.status NOT IN ('Finalizado', 'Cancelado')
             ORDER BY p.data_pedido DESC";
@@ -18,7 +17,6 @@ try {
     $pedidos = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
-    // Caso a tabela clientes_online tenha nome diferente no seu Postgres
     die("Erro ao carregar pedidos online: " . $e->getMessage());
 }
 ?>
