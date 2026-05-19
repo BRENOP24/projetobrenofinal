@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: projeto-breno
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    branch: main
