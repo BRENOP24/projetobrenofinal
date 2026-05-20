@@ -1,4 +1,5 @@
 <?php
+//teste
 require_once 'config/sessao.php';
 require_once 'config/conexao.php';
 
