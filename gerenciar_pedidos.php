@@ -44,22 +44,21 @@ SELECT * FROM (
 WHERE data_pedido BETWEEN :inicio AND :fim
 ";
 
-// Parâmetros de data (Garante o dia inteiro caso seja TIMESTAMP)
+// Parâmetros de Data
 $params = [
     ':inicio' => $data_inicio . ' 00:00:00',
     ':fim'    => $data_fim . ' 23:59:59'
 ];
 
-// Busca robusta corrigida para PostgreSQL
+// Busca robusta e segura adaptada para PostgreSQL
 if (!empty($busca)) {
-    // Usamos ILIKE para não falhar se buscar "joao" ou "JOAO"
     $sql .= " AND (
         cliente_nome ILIKE :busca
-        OR cpf_cnpj LIKE :busca
+        OR cpf_cnpj ILIKE :busca
     ";
 
+    // Trata a busca por ID de forma segura convertendo o ID numérico para texto
     if (is_numeric($busca)) {
-        // Convertemos o ID para TEXT na comparação para evitar erros de tipagem no Postgres
         $sql .= " OR CAST(id AS TEXT) = :id_busca";
         $params[':id_busca'] = $busca;
     }
@@ -68,7 +67,7 @@ if (!empty($busca)) {
     $params[':busca'] = "%$busca%";
 }
 
-// Ordenação final
+// Ordenação final por data mais recente
 $sql .= " ORDER BY data_pedido DESC";
 
 try {
@@ -76,8 +75,8 @@ try {
     $stmt->execute($params);
     $pedidos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    // Importante para você ver se o banco rejeitar a query por algum motivo
-    die("Erro ao processar o relatório de pedidos: " . $e->getMessage());
+    // Caso dê qualquer erro no banco, ele vai te avisar exatamente o que é
+    die("Erro ao carregar o gerenciador de pedidos: " . $e->getMessage());
 }
 ?>
 
@@ -102,15 +101,15 @@ try {
             <form method="GET" class="row g-3">
                 <div class="col-md-3">
                     <label class="form-label small fw-bold">Data Inicial</label>
-                    <input type="date" name="data_inicio" class="form-control" value="<?= $data_inicio ?>">
+                    <input type="date" name="data_inicio" class="form-control" value="<?= htmlspecialchars($data_inicio) ?>">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label small fw-bold">Data Final</label>
-                    <input type="date" name="data_fim" class="form-control" value="<?= $data_fim ?>">
+                    <input type="date" name="data_fim" class="form-control" value="<?= htmlspecialchars($data_fim) ?>">
                 </div>
                 <div class="col-md-4">
                     <label class="form-label small fw-bold">Cliente (Nome, CPF ou Nº Pedido)</label>
-                    <input type="text" name="busca" class="form-control" placeholder="Ex: João ou 123.456..." value="<?= $busca ?>">
+                    <input type="text" name="busca" class="form-control" placeholder="Ex: João ou 123.456..." value="<?= htmlspecialchars($busca) ?>">
                 </div>
                 <div class="col-md-2 d-flex align-items-end">
                     <button type="submit" class="btn btn-primary w-100"><i class="fas fa-search"></i> Filtrar</button>
@@ -140,16 +139,20 @@ try {
                             <td><strong>#<?= $p['id'] ?></strong></td>
                             <td><?= date('d/m/Y H:i', strtotime($p['data_pedido'])) ?></td>
                             <td>
-                                <?= $p['cliente_nome'] ?><br>
-                                <small class="text-muted"><?= $p['cpf_cnpj'] ?></small>
+                                <?= htmlspecialchars($p['cliente_nome']) ?><br>
+                                <small class="text-muted"><?= htmlspecialchars($p['cpf_cnpj']) ?></small>
                             </td>
                             <td>
-                                 <span class="badge bg-info text-dark">
-                                            <?= $p['tipo'] ?> (<?= $p['origem'] ?>)</span></td>
-                            <td><?= $p['pagamento'] ?></td>
+                                <?php if ($p['origem'] === 'ONLINE'): ?>
+                                    <span class="badge bg-success"><i class="fas fa-globe"></i> <?= htmlspecialchars($p['tipo']) ?> (<?= $p['origem'] ?>)</span>
+                                <?php else: ?>
+                                    <span class="badge bg-info text-dark"><i class="fas fa-store"></i> <?= htmlspecialchars($p['tipo']) ?> (<?= $p['origem'] ?>)</span>
+                                <?php endif; ?>
+                            </td>
+                            <td><?= htmlspecialchars($p['pagamento']) ?></td>
                             <td class="text-end fw-bold text-success">R$ <?= number_format($p['valor_total'], 2, ',', '.') ?></td>
                             <td class="text-center">
-                                <button onclick="window.open('imprimir_pedido.php?id=<?= $p['id'] ?>', '_blank')" class="btn btn-sm btn-secondary">
+                                <button onclick="window.open('imprimir_pedido.php?id=<?= $p['id'] ?>&origem=<?= $p['origem'] ?>', '_blank')" class="btn btn-sm btn-secondary">
                                     <i class="fas fa-print"></i> Reimprimir
                                 </button>
                             </td>
