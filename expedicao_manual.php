@@ -6,7 +6,7 @@ require_once 'config/conexao.php';
 $data_inicio = $_GET['data_inicio'] ?? date('Y-m-d');
 $data_fim = $_GET['data_fim'] ?? date('Y-m-d');
 
-// Buscamos os pedidos manuais (pedidos) e do site (pedidos_online) unificando seus respectivos clientes e endereços
+// Buscamos os pedidos manuais e do site ignorando tudo o que for "Retirada"
 $sql = "
     SELECT 
         p.id,
@@ -14,12 +14,15 @@ $sql = "
         p.motoboy_id,
         p.valor_total, 
         p.endereco_entrega, 
-        c.nome as cliente_nome, -- Busca na tabela 'clientes' (sistema)
+        c.nome as cliente_nome,
         'sistema' as origem
     FROM pedidos p 
     LEFT JOIN clientes c ON p.cliente_id = c.id 
     WHERE p.tipo_venda = 'delivery' 
     AND p.motoboy_id IS NULL 
+    -- Trava 1: Ignora se o texto do endereço contiver 'Retirada' ou 'Balcão' (ILIKE ignora maiúsculas/minúsculas)
+    AND p.endereco_entrega NOT ILIKE '%Retirada%'
+    AND p.endereco_entrega NOT ILIKE '%Balcão%'
     AND p.criado_em::date BETWEEN :inicio AND :fim
 
     UNION ALL
@@ -30,16 +33,20 @@ $sql = "
         po.motoboy_id,
         po.valor_total, 
         po.endereco_completo as endereco_entrega, 
-        co.nome as cliente_nome, -- IMPORTANTE: Busca na tabela 'clientes_online' (co)
+        co.nome as cliente_nome,
         'site' as origem
     FROM pedidos_online po 
-    LEFT JOIN clientes_online co ON po.cliente_id = co.id -- IMPORTANTE: Corrigido para apontar para a tabela do site
+    LEFT JOIN clientes_online co ON po.cliente_id = co.id 
     WHERE po.motoboy_id IS NULL 
     AND po.status NOT IN ('Finalizado', 'Cancelado')
+    -- Trava 2: No site, filtramos pela coluna tipo_entrega se ela não for delivery
+    AND po.tipo_entrega NOT ILIKE '%retirada%'
+    -- Garante também pelo texto do endereço por segurança
+    AND po.endereco_completo NOT ILIKE '%Retirada%'
+    AND po.endereco_completo NOT ILIKE '%Balcão%'
     AND po.data_pedido::date BETWEEN :inicio_online AND :fim_online
 
-    ORDER BY id DESC
-";
+    ORDER BY id DESC";
 try {
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
