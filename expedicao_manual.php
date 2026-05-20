@@ -13,7 +13,7 @@ $sql = "
         p.cliente_id,
         p.motoboy_id,
         p.valor_total, 
-        p.endereco_entrega, -- Coluna de endereço do sistema
+        p.endereco_entrega, -- Campo original da tabela pedidos
         c.nome as cliente_nome,
         'sistema' as origem
     FROM pedidos p 
@@ -29,7 +29,7 @@ $sql = "
         po.cliente_id,
         po.motoboy_id,
         po.valor_total, 
-        po.endereco_entrega, -- Ajuste aqui se na tabela online o nome for diferente (ex: po.endereco)
+        po.endereco_completo as endereco_entrega, -- Apelidamos para bater com a de cima!
         c.nome as cliente_nome,
         'site' as origem
     FROM pedidos_online po 
