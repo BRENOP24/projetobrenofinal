@@ -24,27 +24,27 @@ if ($origem === 'ONLINE') {
             po.tipo_entrega AS tipo_venda, 
             po.status,
             po.data_pedido AS criado_em,
-            po.endereco_completo AS endereco_entrega, 
+            po.endereco_completo AS address_entrega, 
             c.nome AS cliente_nome,
             c.telefone,
             f.descricao AS forma_pagamento
         FROM pedidos_online po
-        LEFT JOIN clientes c ON po.cliente_id = c.id
+        LEFT JOIN clientes_online c ON po.cliente_id = c.id -- Conectado à tabela correta de produção
         LEFT JOIN formas_pagamento f ON po.forma_pagamento_id = f.id
         WHERE po.id = :id
         LIMIT 1
     ";
     
-    // DEFINIÇÃO PARA ITENS ONLINE (Baseado na sua imagem)
+    // DEFINIÇÃO PARA ITENS ONLINE
     $sqlItens = "
         SELECT 
             prod.nome,
             pi.quantidade,
-            pi.preco_unitario AS valor_unitario, -- Ajustado para 'preco_unitario'
+            pi.preco_unitario AS valor_unitario,
             (pi.quantidade * pi.preco_unitario) AS subtotal
         FROM pedidos_online_itens pi
         INNER JOIN produtos prod ON prod.id = pi.produto_id
-        WHERE pi.pedido_id = :id -- Ajustado para 'pedido_id'
+        WHERE pi.pedido_id = :id
     ";
 } else {
     $sqlPedido = "
@@ -56,7 +56,7 @@ if ($origem === 'ONLINE') {
             p.tipo_venda,
             p.status,
             p.criado_em,
-            p.endereco_entrega, 
+            p.endereco_entrega AS address_entrega, 
             c.nome AS cliente_nome,
             c.telefone,
             f.descricao AS forma_pagamento
@@ -89,7 +89,7 @@ if (!$pedido) {
     die('Pedido não encontrado.');
 }
 
-// Executa busca dos Itens (Sem try/catch agora que as colunas estão exatas!)
+// Executa busca dos Itens
 $stmtItens = $pdo->prepare($sqlItens);
 $stmtItens->execute([':id' => $id]);
 $itens = $stmtItens->fetchAll(PDO::FETCH_ASSOC);
@@ -146,17 +146,17 @@ $itens = $stmtItens->fetchAll(PDO::FETCH_ASSOC);
 
 <div class="line"></div>
 
-<span class="bold">Cliente:</span> <?= htmlspecialchars($pedido['cliente_nome']) ?><br>
+<span class="bold">Cliente:</span> <?= htmlspecialchars($pedido['cliente_nome'] ?? 'Consumidor') ?><br>
 <span class="bold">Tel:</span> <?= htmlspecialchars($pedido['telefone'] ?? 'Não informado') ?><br>
 
 <?php 
 $tipo_venda_clean = strtolower($pedido['tipo_venda'] ?? '');
 if ($tipo_venda_clean === 'delivery' || $tipo_venda_clean === 'tele entrega' || $origem === 'ONLINE'): 
 ?>
-    <?php if (!empty($pedido['endereco_entrega'])): ?>
+    <?php if (!empty($pedido['address_entrega'])): ?>
         <div style="margin-top: 5px; padding: 3px; border: 1px solid #000;">
             <span class="bold">ENDEREÇO DE ENTREGA:</span><br>
-            <?= htmlspecialchars($pedido['endereco_entrega']); ?>
+            <?= htmlspecialchars($pedido['address_entrega']); ?>
         </div>
     <?php endif; ?>
 <?php endif; ?>
@@ -173,11 +173,11 @@ if ($tipo_venda_clean === 'delivery' || $tipo_venda_clean === 'tele entrega' || 
     <tbody>
     <?php foreach ($itens as $item): ?>
         <tr>
-            <td colspan="2"><?= htmlspecialchars($item['nome']) ?></td>
+            <td colspan="2"><?= htmlspecialchars($item['nome'] ?? 'Item sem nome') ?></td>
         </tr>
         <tr>
-            <td><?= number_format($item['quantidade'], 0) ?> x <?= number_format($item['valor_unitario'], 2, ',', '.') ?></td>
-            <td class="right"><?= number_format($item['subtotal'], 2, ',', '.') ?></td>
+            <td><?= number_format($item['quantidade'] ?? 0, 0) ?> x <?= number_format($item['valor_unitario'] ?? 0, 2, ',', '.') ?></td>
+            <td class="right"><?= number_format($item['subtotal'] ?? 0, 2, ',', '.') ?></td>
         </tr>
     <?php endforeach; ?>
     </tbody>
@@ -186,14 +186,14 @@ if ($tipo_venda_clean === 'delivery' || $tipo_venda_clean === 'tele entrega' || 
 <div class="line"></div>
 
 <?php
-$subtotal_calculado = $pedido['valor_total'] + $pedido['desconto'] - $pedido['taxa_entrega'];
+$subtotal_calculado = ($pedido['valor_total'] ?? 0) + ($pedido['desconto'] ?? 0) - ($pedido['taxa_entrega'] ?? 0);
 ?>
 
 <div class="right">
     Subtotal: R$ <?= number_format($subtotal_calculado, 2, ',', '.') ?><br>
-    Desconto: R$ <?= number_format($pedido['desconto'], 2, ',', '.') ?><br>
-    Taxa Entrega: R$ <?= number_format($pedido['taxa_entrega'], 2, ',', '.') ?><br>
-    <span class="bold" style="font-size: 13px;">TOTAL: R$ <?= number_format($pedido['valor_total'], 2, ',', '.') ?></span>
+    Desconto: R$ <?= number_format($pedido['desconto'] ?? 0, 2, ',', '.') ?><br>
+    Taxa Entrega: R$ <?= number_format($pedido['taxa_entrega'] ?? 0, 2, ',', '.') ?><br>
+    <span class="bold" style="font-size: 13px;">TOTAL: R$ <?= number_format($pedido['valor_total'] ?? 0, 2, ',', '.') ?></span>
 </div>
 
 <div class="line"></div>
