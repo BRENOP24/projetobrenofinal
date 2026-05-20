@@ -4,43 +4,55 @@ require_once 'config/conexao.php';
 
 // Filtros
 $data_inicio = $_GET['data_inicio'] ?? date('Y-m-d');
-$data_fim = $_GET['data_fim'] ?? date('Y-m-d');
-$busca = $_GET['busca'] ?? '';
+$data_fim    = $_GET['data_fim'] ?? date('Y-m-d');
+$busca       = $_GET['busca'] ?? '';
+$origem_filtro = $_GET['origem_filtro'] ?? 'TODOS'; // Novo filtro: TODOS, PRESENCIAL ou ONLINE
 
-// Query unificada (presencial + online)
+// Montando os subblocos SQL baseados na escolha do usuário para poupar processamento do banco
+$queries = [];
+
+if ($origem_filtro === 'TODOS' || $origem_filtro === 'PRESENCIAL') {
+    $queries[] = "
+        SELECT 
+            p.id,
+            p.data_pedido,
+            COALESCE(c.nome, 'Consumidor') AS cliente_nome,
+            COALESCE(c.cpf_cnpj, '-') AS cpf_cnpj,
+            f.descricao AS pagamento,
+            p.valor_total,
+            p.tipo_venda AS tipo,
+            'PRESENCIAL' AS origem
+        FROM pedidos p
+        LEFT JOIN clientes c ON p.cliente_id = c.id
+        LEFT JOIN formas_pagamento f ON p.forma_pagamento_id = f.id
+    ";
+}
+
+if ($origem_filtro === 'TODOS' || $origem_filtro === 'ONLINE') {
+    $queries[] = "
+        SELECT 
+            po.id,
+            po.data_pedido,
+            COALESCE(c.nome, 'Consumidor') AS cliente_nome,
+            COALESCE(c.cpf_cnpj, '-') AS cpf_cnpj,
+            f.descricao AS pagamento,
+            po.valor_total,
+            po.tipo_entrega AS tipo,
+            'ONLINE' AS origem
+        FROM pedidos_online po
+        LEFT JOIN clientes c ON po.cliente_id = c.id
+        LEFT JOIN formas_pagamento f ON po.forma_pagamento_id = f.id
+    ";
+}
+
+// Une as queries necessárias com UNION ALL
+$sql_uniao = implode(" UNION ALL ", $queries);
+
+// Monta a query principal envolvendo a união selecionada
 $sql = "
 SELECT * FROM (
-
-    SELECT 
-        p.id,
-        p.data_pedido,
-        COALESCE(c.nome, 'Consumidor') AS cliente_nome,
-        COALESCE(c.cpf_cnpj, '-') AS cpf_cnpj,
-        f.descricao AS pagamento,
-        p.valor_total,
-        p.tipo_venda AS tipo,
-        'PRESENCIAL' AS origem
-    FROM pedidos p
-    LEFT JOIN clientes c ON p.cliente_id = c.id
-    LEFT JOIN formas_pagamento f ON p.forma_pagamento_id = f.id
-
-    UNION ALL
-
-    SELECT 
-        po.id,
-        po.data_pedido,
-        COALESCE(c.nome, 'Consumidor') AS cliente_nome,
-        COALESCE(c.cpf_cnpj, '-') AS cpf_cnpj,
-        f.descricao AS pagamento,
-        po.valor_total,
-        po.tipo_entrega AS tipo,
-        'ONLINE' AS origem
-    FROM pedidos_online po
-    LEFT JOIN clientes c ON po.cliente_id = c.id
-    LEFT JOIN formas_pagamento f ON po.forma_pagamento_id = f.id
-
+    $sql_uniao
 ) AS pedidos_geral
-
 WHERE data_pedido BETWEEN :inicio AND :fim
 ";
 
@@ -50,14 +62,13 @@ $params = [
     ':fim'    => $data_fim . ' 23:59:59'
 ];
 
-// Busca robusta e segura adaptada para PostgreSQL
+// Busca por Nome, CPF ou ID
 if (!empty($busca)) {
     $sql .= " AND (
         cliente_nome ILIKE :busca
         OR cpf_cnpj ILIKE :busca
     ";
 
-    // Trata a busca por ID de forma segura convertendo o ID numérico para texto
     if (is_numeric($busca)) {
         $sql .= " OR CAST(id AS TEXT) = :id_busca";
         $params[':id_busca'] = $busca;
@@ -67,7 +78,7 @@ if (!empty($busca)) {
     $params[':busca'] = "%$busca%";
 }
 
-// Ordenação final por data mais recente
+// Ordenação final
 $sql .= " ORDER BY data_pedido DESC";
 
 try {
@@ -75,8 +86,7 @@ try {
     $stmt->execute($params);
     $pedidos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    // Caso dê qualquer erro no banco, ele vai te avisar exatamente o que é
-    die("Erro ao carregar o gerenciador de pedidos: " . $e->getMessage());
+    die("Erro ao carregar os pedidos: " . $e->getMessage());
 }
 ?>
 
@@ -96,20 +106,29 @@ try {
         <a href="dashboard.php" class="btn btn-outline-secondary"><i class="fas fa-home"></i> Voltar ao Painel</a>
     </div>
 
+    <!-- Formulário de Filtros Modificado -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-body">
             <form method="GET" class="row g-3">
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label small fw-bold">Data Inicial</label>
                     <input type="date" name="data_inicio" class="form-control" value="<?= htmlspecialchars($data_inicio) ?>">
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label small fw-bold">Data Final</label>
                     <input type="date" name="data_fim" class="form-control" value="<?= htmlspecialchars($data_fim) ?>">
                 </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">Origem</label>
+                    <select name="origem_filtro" class="form-select">
+                        <option value="TODOS" <?= $origem_filtro === 'TODOS' ? 'selected' : '' ?>>Todos os Pedidos</option>
+                        <option value="PRESENCIAL" <?= $origem_filtro === 'PRESENCIAL' ? 'selected' : '' ?>>Apenas Presenciais</option>
+                        <option value="ONLINE" <?= $origem_filtro === 'ONLINE' ? 'selected' : '' ?>>Apenas Online (Cardápio)</option>
+                    </select>
+                </div>
                 <div class="col-md-4">
                     <label class="form-label small fw-bold">Cliente (Nome, CPF ou Nº Pedido)</label>
-                    <input type="text" name="busca" class="form-control" placeholder="Ex: João ou 123.456..." value="<?= htmlspecialchars($busca) ?>">
+                    <input type="text" name="busca" class="form-control" placeholder="Ex: João ou 123..." value="<?= htmlspecialchars($busca) ?>">
                 </div>
                 <div class="col-md-2 d-flex align-items-end">
                     <button type="submit" class="btn btn-primary w-100"><i class="fas fa-search"></i> Filtrar</button>
@@ -126,7 +145,7 @@ try {
                         <th>ID</th>
                         <th>Data/Hora</th>
                         <th>Cliente</th>
-                        <th>Tipo</th>
+                        <th>Tipo / Canal</th>
                         <th>Pagamento</th>
                         <th class="text-end">Total</th>
                         <th class="text-center">Ações</th>
@@ -144,9 +163,9 @@ try {
                             </td>
                             <td>
                                 <?php if ($p['origem'] === 'ONLINE'): ?>
-                                    <span class="badge bg-success"><i class="fas fa-globe"></i> <?= htmlspecialchars($p['tipo']) ?> (<?= $p['origem'] ?>)</span>
+                                    <span class="badge bg-success"><i class="fas fa-globe"></i> <?= htmlspecialchars($p['tipo']) ?> (SITE)</span>
                                 <?php else: ?>
-                                    <span class="badge bg-info text-dark"><i class="fas fa-store"></i> <?= htmlspecialchars($p['tipo']) ?> (<?= $p['origem'] ?>)</span>
+                                    <span class="badge bg-info text-dark"><i class="fas fa-store"></i> <?= htmlspecialchars($p['tipo']) ?> (LOJA)</span>
                                 <?php endif; ?>
                             </td>
                             <td><?= htmlspecialchars($p['pagamento']) ?></td>
@@ -160,7 +179,7 @@ try {
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
-                            <td colspan="7" class="text-center py-4 text-muted">Nenhum pedido encontrado para este período.</td>
+                            <td colspan="7" class="text-center py-4 text-muted">Nenhum pedido encontrado para este filtro ou período.</td>
                         </tr>
                     <?php endif; ?>
                 </tbody>
