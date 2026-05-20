@@ -7,13 +7,13 @@ $data_inicio = $_GET['data_inicio'] ?? date('Y-m-d');
 $data_fim = $_GET['data_fim'] ?? date('Y-m-d');
 
 // Buscamos os pedidos manuais (pedidos) e do site (pedidos_online) usando UNION ALL
-// Garantimos que ambas as consultas retornem exatamente as mesmas colunas na mesma ordem
 $sql = "
     SELECT 
         p.id,
         p.cliente_id,
         p.motoboy_id,
-        p.valor_total, -- adicione outras colunas específicas que você usa na listagem (ex: p.endereco)
+        p.valor_total, 
+        p.endereco_entrega, -- Coluna de endereço do sistema
         c.nome as cliente_nome,
         'sistema' as origem
     FROM pedidos p 
@@ -28,27 +28,31 @@ $sql = "
         po.id,
         po.cliente_id,
         po.motoboy_id,
-        po.valor_total, -- use o nome exato da coluna de valor na tabela pedidos_online
+        po.valor_total, 
+        po.endereco_entrega, -- Ajuste aqui se na tabela online o nome for diferente (ex: po.endereco)
         c.nome as cliente_nome,
         'site' as origem
     FROM pedidos_online po 
     LEFT JOIN clientes c ON po.cliente_id = c.id 
     WHERE po.motoboy_id IS NULL 
-    -- Se na tabela online você usa status para saber se está pronto/aprovado, pode filtrar aqui
     AND po.status NOT IN ('Finalizado', 'Cancelado')
     AND po.data_pedido::date BETWEEN :inicio_online AND :fim_online
 
     ORDER BY id DESC
 ";
 
-$stmt = $pdo->prepare($sql);
-$stmt->execute([
-    ':inicio'        => $data_inicio, 
-    ':fim'           => $data_fim,
-    ':inicio_online' => $data_inicio, 
-    ':fim_online'    => $data_fim
-]);
-$pedidos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+try {
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([
+        ':inicio'        => $data_inicio, 
+        ':fim'           => $data_fim,
+        ':inicio_online' => $data_inicio, 
+        ':fim_online'    => $data_fim
+    ]);
+    $pedidos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    die("Erro na consulta do banco: " . $e->getMessage());
+}
 
 // Busca a lista de motoboys para o select
 $motoboys = $pdo->query("SELECT id, nome FROM motoboys ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
@@ -81,20 +85,18 @@ $motoboys = $pdo->query("SELECT id, nome FROM motoboys ORDER BY nome ASC")->fetc
         </div>
     </div>
 
-<div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-    <h5 class="mb-0">
-        <i class="fas fa-shipping-fast"></i> Pedidos Aguardando Motoboy
-    </h5>
-
-    <div>
-        <button class="btn btn-success btn-sm" onclick="otimizarRotas()">
-            <i class="fas fa-route"></i> Otimizar Rotas
-        </button>
-
-        <a href="dashboard.php" class="btn btn-sm btn-outline-light">Voltar</a>
-    </div>
-</div>
-
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="fas fa-shipping-fast"></i> Pedidos Aguardando Motoboy
+            </h5>
+            <div>
+                <button class="btn btn-success btn-sm" onclick="otimizarRotas()">
+                    <i class="fas fa-route"></i> Otimizar Rotas
+                </button>
+                <a href="dashboard.php" class="btn btn-sm btn-outline-light">Voltar</a>
+            </div>
+        </div>
         
         <div class="card-body">
             <div class="table-responsive">
@@ -102,6 +104,7 @@ $motoboys = $pdo->query("SELECT id, nome FROM motoboys ORDER BY nome ASC")->fetc
                     <thead class="table-light">
                         <tr>
                             <th>Pedido</th>
+                            <th>Origem</th>
                             <th>Cliente</th>
                             <th>Endereço</th>
                             <th class="text-end">Total</th>
@@ -112,18 +115,27 @@ $motoboys = $pdo->query("SELECT id, nome FROM motoboys ORDER BY nome ASC")->fetc
                         <?php foreach($pedidos as $p): ?>
                         <tr>
                             <td><strong>#<?= $p['id'] ?></strong></td>
+                            <td>
+                                <!-- Tag visual para diferenciar a origem do pedido -->
+                                <?php if($p['origem'] === 'site'): ?>
+                                    <span class="badge bg-success"><i class="fas fa-globe"></i> Site</span>
+                                <?php else: ?>
+                                    <span class="badge bg-primary"><i class="fas fa-laptop"></i> Sistema</span>
+                                <?php endif; ?>
+                            </td>
                             <td><?= $p['cliente_nome'] ?></td>
                             <td><small><?= $p['endereco_entrega'] ?></small></td>
                             <td class="text-end">R$ <?= number_format($p['valor_total'], 2, ',', '.') ?></td>
                             <td class="text-center">
-                                <button class="btn btn-primary btn-sm" onclick="prepararVinculo(<?= $p['id'] ?>)">
+                                <!-- Passamos o ID e a Origem para a função JS -->
+                                <button class="btn btn-primary btn-sm" onclick="prepararVinculo(<?= $p['id'] ?>, '<?= $p['origem'] ?>')">
                                     <i class="fas fa-motorcycle"></i> Despachar
                                 </button>
                             </td>
                         </tr>
                         <?php endforeach; ?>
                         <?php if(empty($pedidos)): ?>
-                        <tr><td colspan="5" class="text-center text-muted py-4">Nenhum pedido pendente neste período.</td></tr>
+                        <tr><td colspan="6" class="text-center text-muted py-4">Nenhum pedido pendente neste período.</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -132,6 +144,7 @@ $motoboys = $pdo->query("SELECT id, nome FROM motoboys ORDER BY nome ASC")->fetc
     </div>
 </div>
 
+<!-- Modal Motoboy -->
 <div class="modal fade" id="modalMotoboy" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -141,6 +154,7 @@ $motoboys = $pdo->query("SELECT id, nome FROM motoboys ORDER BY nome ASC")->fetc
             </div>
             <div class="modal-body">
                 <input type="hidden" id="pedido_id_vincular">
+                <input type="hidden" id="pedido_origem_vincular"> <!-- Guardará se é site ou sistema -->
                 <div class="mb-3">
                     <label class="form-label fw-bold">Quem vai entregar?</label>
                     <select id="select_motoboy" class="form-select form-select-lg">
@@ -166,15 +180,18 @@ $motoboys = $pdo->query("SELECT id, nome FROM motoboys ORDER BY nome ASC")->fetc
 <script>
 let modalInstancia = new bootstrap.Modal(document.getElementById('modalMotoboy'));
 
-function prepararVinculo(id) {
+// Agora recebe o ID e a Origem do pedido
+function prepararVinculo(id, origem) {
     document.getElementById('pedido_id_vincular').value = id;
-    document.getElementById('num_pedido_modal').innerText = '#' + id;
-    document.getElementById('select_motoboy').value = ""; // Reseta seleção
+    document.getElementById('pedido_origem_vincular').value = origem;
+    document.getElementById('num_pedido_modal').innerText = '#' + id + ' (' + origem.toUpperCase() + ')';
+    document.getElementById('select_motoboy').value = ""; 
     modalInstancia.show();
 }
 
 async function confirmarVinculo() {
     const pedido_id = document.getElementById('pedido_id_vincular').value;
+    const origem = document.getElementById('pedido_origem_vincular').value;
     const motoboy_id = document.getElementById('select_motoboy').value;
     const btn = document.getElementById('btnConfirmar');
 
@@ -184,10 +201,11 @@ async function confirmarVinculo() {
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processando...';
 
+        // Enviando a origem junto no corpo da requisição
         const res = await fetch('atualizar_entrega.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: `pedido_id=${pedido_id}&motoboy_id=${motoboy_id}`
+            body: `pedido_id=${pedido_id}&motoboy_id=${motoboy_id}&origem=${origem}`
         });
 
         const r = await res.json();
@@ -227,8 +245,6 @@ async function otimizarRotas() {
         alert("Erro ao otimizar rotas.");
     }
 }
-</script>
-
 </script>
 </body>
 </html>
