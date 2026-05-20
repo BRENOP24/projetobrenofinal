@@ -6,7 +6,7 @@ require_once 'config/conexao.php';
 $data_inicio = $_GET['data_inicio'] ?? date('Y-m-d');
 $data_fim = $_GET['data_fim'] ?? date('Y-m-d');
 
-// Buscamos os pedidos manuais e do site ignorando tudo o que for "Retirada"
+// Buscamos os pedidos manuais e do site unificados, ignorando retiradas/balcão
 $sql = "
     SELECT 
         p.id,
@@ -20,7 +20,6 @@ $sql = "
     LEFT JOIN clientes c ON p.cliente_id = c.id 
     WHERE p.tipo_venda = 'delivery' 
     AND p.motoboy_id IS NULL 
-    -- Trava 1: Ignora se o texto do endereço contiver 'Retirada' ou 'Balcão' (ILIKE ignora maiúsculas/minúsculas)
     AND p.endereco_entrega NOT ILIKE '%Retirada%'
     AND p.endereco_entrega NOT ILIKE '%Balcão%'
     AND p.criado_em::date BETWEEN :inicio AND :fim
@@ -39,14 +38,13 @@ $sql = "
     LEFT JOIN clientes_online co ON po.cliente_id = co.id 
     WHERE po.motoboy_id IS NULL 
     AND po.status NOT IN ('Finalizado', 'Cancelado')
-    -- Trava 2: No site, filtramos pela coluna tipo_entrega se ela não for delivery
     AND po.tipo_entrega NOT ILIKE '%retirada%'
-    -- Garante também pelo texto do endereço por segurança
     AND po.endereco_completo NOT ILIKE '%Retirada%'
     AND po.endereco_completo NOT ILIKE '%Balcão%'
     AND po.data_pedido::date BETWEEN :inicio_online AND :fim_online
 
-    ORDER BY id DESC";
+    ORDER BY origem DESC, id DESC"; // Ordena primeiro por origem (site/sistema) e depois pelo ID decrescente
+
 try {
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
@@ -122,18 +120,16 @@ $motoboys = $pdo->query("SELECT id, nome FROM motoboys ORDER BY nome ASC")->fetc
                         <tr>
                             <td><strong>#<?= $p['id'] ?></strong></td>
                             <td>
-                                <!-- Tag visual para diferenciar a origem do pedido -->
                                 <?php if($p['origem'] === 'site'): ?>
                                     <span class="badge bg-success"><i class="fas fa-globe"></i> Site</span>
                                 <?php else: ?>
                                     <span class="badge bg-primary"><i class="fas fa-laptop"></i> Sistema</span>
                                 <?php endif; ?>
                             </td>
-                            <td><?= $p['cliente_nome'] ?></td>
-                            <td><small><?= $p['endereco_entrega'] ?></small></td>
+                            <td><?= htmlspecialchars($p['cliente_nome']) ?></td>
+                            <td><small><?= htmlspecialchars($p['endereco_entrega']) ?></small></td>
                             <td class="text-end">R$ <?= number_format($p['valor_total'], 2, ',', '.') ?></td>
                             <td class="text-center">
-                                <!-- Passamos o ID e a Origem para a função JS -->
                                 <button class="btn btn-primary btn-sm" onclick="prepararVinculo(<?= $p['id'] ?>, '<?= $p['origem'] ?>')">
                                     <i class="fas fa-motorcycle"></i> Despachar
                                 </button>
@@ -150,7 +146,6 @@ $motoboys = $pdo->query("SELECT id, nome FROM motoboys ORDER BY nome ASC")->fetc
     </div>
 </div>
 
-<!-- Modal Motoboy -->
 <div class="modal fade" id="modalMotoboy" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -160,13 +155,13 @@ $motoboys = $pdo->query("SELECT id, nome FROM motoboys ORDER BY nome ASC")->fetc
             </div>
             <div class="modal-body">
                 <input type="hidden" id="pedido_id_vincular">
-                <input type="hidden" id="pedido_origem_vincular"> <!-- Guardará se é site ou sistema -->
+                <input type="hidden" id="pedido_origem_vincular">
                 <div class="mb-3">
                     <label class="form-label fw-bold">Quem vai entregar?</label>
                     <select id="select_motoboy" class="form-select form-select-lg">
                         <option value="">Selecione o Motoboy...</option>
                         <?php foreach($motoboys as $m): ?>
-                            <option value="<?= $m['id'] ?>"><?= $m['nome'] ?></option>
+                            <option value="<?= $m['id'] ?>"><?= htmlspecialchars($m['nome']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -186,7 +181,6 @@ $motoboys = $pdo->query("SELECT id, nome FROM motoboys ORDER BY nome ASC")->fetc
 <script>
 let modalInstancia = new bootstrap.Modal(document.getElementById('modalMotoboy'));
 
-// Agora recebe o ID e a Origem do pedido
 function prepararVinculo(id, origem) {
     document.getElementById('pedido_id_vincular').value = id;
     document.getElementById('pedido_origem_vincular').value = origem;
@@ -207,7 +201,6 @@ async function confirmarVinculo() {
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processando...';
 
-        // Enviando a origem junto no corpo da requisição
         const res = await fetch('atualizar_entrega.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
