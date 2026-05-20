@@ -5,20 +5,20 @@ require_once 'config/conexao.php';
 
 $pedido_id  = $_POST['pedido_id'] ?? null;
 $motoboy_id = $_POST['motoboy_id'] ?? null;
-$origem     = $_POST['origem'] ?? 'sistema'; // Padrão é sistema se não vier nada
+$origem     = $_POST['origem'] ?? null; // Tiramos o padrão automático para investigar
 
-if (!$pedido_id || !$motoboy_id) {
-    echo json_encode(['status' => 'erro', 'msg' => 'Dados incompletos']);
+if (!$pedido_id || !$motoboy_id || !$origem) {
+    echo json_encode(['status' => 'erro', 'msg' => 'Dados incompletos (Faltando ID, Motoboy ou Origem)']);
     exit;
 }
 
 try {
-    if ($origem === 'site') {
+    // Forçamos a comparação exata em minúsculo para evitar divergências (ex: 'site' ou 'Site')
+    if (strtolower($origem) === 'site') {
         // Atualiza a tabela do site (pedidos_online)
-        // Alterado para 'Finalizado' para respeitar o CHECK constraint do seu banco Postgres
         $sql = "UPDATE pedidos_online SET motoboy_id = :moto, status = 'Finalizado' WHERE id = :pedido";
     } else {
-        // Mantém a regra atual para os pedidos manuais (pedidos)
+        // Atualiza a tabela manual (pedidos)
         $sql = "UPDATE pedidos SET motoboy_id = :moto, status = 'finalizado' WHERE id = :pedido";
     }
 
