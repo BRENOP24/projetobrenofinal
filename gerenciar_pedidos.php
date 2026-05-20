@@ -44,21 +44,23 @@ SELECT * FROM (
 WHERE data_pedido BETWEEN :inicio AND :fim
 ";
 
-// Parâmetros
+// Parâmetros de data (Garante o dia inteiro caso seja TIMESTAMP)
 $params = [
     ':inicio' => $data_inicio . ' 00:00:00',
     ':fim'    => $data_fim . ' 23:59:59'
 ];
 
-// Busca (robusta)
+// Busca robusta corrigida para PostgreSQL
 if (!empty($busca)) {
+    // Usamos ILIKE para não falhar se buscar "joao" ou "JOAO"
     $sql .= " AND (
-        COALESCE(cliente_nome, '') LIKE :busca
-        OR COALESCE(cpf_cnpj, '') LIKE :busca
+        cliente_nome ILIKE :busca
+        OR cpf_cnpj LIKE :busca
     ";
 
     if (is_numeric($busca)) {
-        $sql .= " OR id = :id_busca";
+        // Convertemos o ID para TEXT na comparação para evitar erros de tipagem no Postgres
+        $sql .= " OR CAST(id AS TEXT) = :id_busca";
         $params[':id_busca'] = $busca;
     }
 
@@ -66,13 +68,18 @@ if (!empty($busca)) {
     $params[':busca'] = "%$busca%";
 }
 
+// Ordenação final
 $sql .= " ORDER BY data_pedido DESC";
 
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$pedidos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+try {
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $pedidos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    // Importante para você ver se o banco rejeitar a query por algum motivo
+    die("Erro ao processar o relatório de pedidos: " . $e->getMessage());
+}
 ?>
-
 
 <!DOCTYPE html>
 <html lang="pt-br">
