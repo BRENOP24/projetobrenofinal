@@ -6,15 +6,32 @@ require_once 'config/funcoes.php';
 $mensagem = "";
 
 /* ===============================
-   FILTRO
+   FILTROS DE BUSCA (Ajustados)
 ================================ */
 $filtro = $_GET['filtro'] ?? 'todos';
-$condicaoFiltro = "";
+$busca_nome = $_GET['busca_nome'] ?? '';
+$busca_categoria = $_GET['busca_categoria'] ?? '';
 
+$condicaoFiltro = "";
+$params = [];
+
+// Filtro por status de visibilidade
 if ($filtro === 'visiveis') {
-    $condicaoFiltro = " AND p.aparecer_online = 'S' ";
+    $condicaoFiltro .= " AND p.aparecer_online = 'S' ";
 } elseif ($filtro === 'ocultos') {
-    $condicaoFiltro = " AND p.aparecer_online = 'N' ";
+    $condicaoFiltro .= " AND p.aparecer_online = 'N' ";
+}
+
+// Filtro por nome do produto
+if (!empty($busca_nome)) {
+    $condicaoFiltro .= " AND p.nome ILIKE :busca_nome "; // Usado ILIKE para PostgreSQL (ou LIKE se for MySQL)
+    $params[':busca_nome'] = "%" . $busca_nome . "%";
+}
+
+// Filtro por ID da categoria
+if (!empty($busca_categoria)) {
+    $condicaoFiltro .= " AND p.categoria_id = :busca_categoria ";
+    $params[':busca_categoria'] = (int)$busca_categoria;
 }
 
 /* ===============================
@@ -44,7 +61,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_atualizar_online'
 }
 
 /* ===============================
-   BUSCA PRODUTOS ORDENADOS
+   BUSCA LISTA DE CATEGORIAS (Para o Filtro Dropdown)
+================================ */
+try {
+    $sql_cat = "SELECT id, nome FROM categorias ORDER BY nome ASC";
+    $stmt_cat = $pdo->query($sql_cat);
+    $lista_categorias = $stmt_cat->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $lista_categorias = [];
+}
+
+/* ===============================
+   BUSCA PRODUTOS FILTRADOS
 ================================ */
 try {
     $sql = "SELECT p.*, 
@@ -57,7 +85,8 @@ try {
                 nome_categoria ASC,
                 p.nome ASC";
 
-    $stmt = $pdo->query($sql);
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
     $produtos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $produtos = [];
@@ -95,6 +124,7 @@ try {
     text-decoration: none;
     font-weight: bold;
     margin-right: 10px;
+    display: inline-block;
 }
 .ativo {
     background: #007bff;
@@ -103,6 +133,19 @@ try {
 .inativo {
     background: #e9ecef;
     color: #333;
+}
+.form-filtro-texto {
+    background: #fdfdfd;
+    border: 1px solid #e2e8f0;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+.input-busca {
+    padding: 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    margin-right: 10px;
 }
 </style>
 </head>
@@ -119,84 +162,123 @@ try {
 
 <?= $mensagem ?>
 
-<!-- FILTROS -->
-<div style="margin-bottom:20px;">
-    <a href="?filtro=todos" 
+<div style="margin-bottom:15px;">
+    <a href="?filtro=todos&busca_nome=<?= urlencode($busca_nome) ?>&busca_categoria=<?= urlencode($busca_categoria) ?>" 
        class="filtro-btn <?= $filtro == 'todos' ? 'ativo' : 'inativo' ?>">
        Todos
     </a>
 
-    <a href="?filtro=visiveis" 
+    <a href="?filtro=visiveis&busca_nome=<?= urlencode($busca_nome) ?>&busca_categoria=<?= urlencode($busca_categoria) ?>" 
        class="filtro-btn <?= $filtro == 'visiveis' ? 'ativo' : 'inativo' ?>">
        ✅ Visíveis
     </a>
 
-    <a href="?filtro=ocultos" 
+    <a href="?filtro=ocultos&busca_nome=<?= urlencode($busca_nome) ?>&busca_categoria=<?= urlencode($busca_categoria) ?>" 
        class="filtro-btn <?= $filtro == 'ocultos' ? 'ativo' : 'inativo' ?>">
        ❌ Ocultos
     </a>
 </div>
 
-<?php 
-$ultima_cat = "";
-foreach ($produtos as $p): 
-    if ($p['nome_categoria'] !== $ultima_cat): 
-        $ultima_cat = $p['nome_categoria'];
-?>
-<div class="categoria-header">
-    📂 Categoria: <?= htmlspecialchars($ultima_cat) ?>
+<div class="form-filtro-texto">
+    <form method="GET" style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
+        <input type="hidden" name="filtro" value="<?= htmlspecialchars($filtro) ?>">
+        
+        <div style="display: flex; flex-direction: column; flex: 2; min-width: 200px;">
+            <label style="font-size: 13px; font-weight: bold; margin-bottom: 5px;">Nome do Produto</label>
+            <input type="text" name="busca_nome" class="input-busca" placeholder="Ex: Pizza, Hambúrguer..." value="<?= htmlspecialchars($busca_nome) ?>">
+        </div>
+
+        <div style="display: flex; flex-direction: column; flex: 1; min-width: 200px;">
+            <label style="font-size: 13px; font-weight: bold; margin-bottom: 5px;">Filtrar por Categoria</label>
+            <select name="busca_categoria" class="input-busca" style="width: 100%;">
+                <option value="">Todas as Categorias</option>
+                <?php foreach ($lista_categorias as $cat): ?>
+                    <option value="<?= $cat['id'] ?>" <?= $busca_categoria == $cat['id'] ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($cat['nome']) ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+
+        <div>
+            <button type="submit" style="background: #28a745; color: white; border: none; padding: 9px 20px; border-radius: 4px; font-weight: bold; cursor: pointer;">
+                🔍 Filtrar
+            </button>
+            <?php if (!empty($busca_nome) || !empty($busca_categoria)): ?>
+                <a href="?filtro=<?= htmlspecialchars($filtro) ?>" style="background: #6c757d; color: white; text-decoration: none; padding: 9px 15px; border-radius: 4px; font-weight: bold; margin-left: 5px; display: inline-block;">
+                    Limpar
+                </a>
+            <?php endif; ?>
+        </div>
+    </form>
 </div>
-<?php endif; ?>
 
-<div class="card-produto">
+<?php if (count($produtos) > 0): ?>
+    <?php 
+    $ultima_cat = "";
+    foreach ($produtos as $p): 
+        if ($p['nome_categoria'] !== $ultima_cat): 
+            $ultima_cat = $p['nome_categoria'];
+    ?>
+    <div class="categoria-header">
+        📂 Categoria: <?= htmlspecialchars($ultima_cat) ?>
+    </div>
+    <?php endif; ?>
 
-<div>
-<?php if($p['imagem']): ?>
-<img src="uploads/produtos/<?= htmlspecialchars($p['imagem']) ?>" 
-     width="70" height="70" 
-     style="object-fit:cover; border-radius:5px;">
+    <div class="card-produto">
+
+    <div>
+    <?php if($p['imagem']): ?>
+    <img src="uploads/produtos/<?= htmlspecialchars($p['imagem']) ?>" 
+         width="70" height="70" 
+         style="object-fit:cover; border-radius:5px;">
+    <?php else: ?>
+    <div style="width:70px; height:70px; background:#eee; text-align:center; line-height:70px; font-size:10px;">
+    Sem foto
+    </div>
+    <?php endif; ?>
+    </div>
+
+    <div>
+    <strong><?= htmlspecialchars($p['nome']) ?></strong><br>
+    <span style="color:#28a745;">
+    R$ <?= number_format($p['preco_venda'], 2, ',', '.') ?>
+    </span>
+    </div>
+
+    <form method="POST" style="display: contents;">
+    <input type="hidden" name="id_produto" value="<?= $p['id'] ?>">
+
+    <div>
+    <label style="font-size:12px;">Obs. no Cardápio:</label>
+    <input type="text" 
+           name="obs_online" 
+           value="<?= htmlspecialchars($p['obs_online'] ?? '') ?>" 
+           style="width:100%; padding:5px;">
+    </div>
+
+    <div style="text-align:right;">
+    <select name="aparecer_online" 
+            style="padding:5px; margin-bottom:5px; width:100%;">
+    <option value="S" <?= $p['aparecer_online'] == 'S' ? 'selected' : '' ?>>✅ Visível</option>
+    <option value="N" <?= $p['aparecer_online'] == 'N' ? 'selected' : '' ?>>❌ Oculto</option>
+    </select>
+
+    <button type="submit" 
+            name="btn_atualizar_online"
+            style="background:#007bff; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; width:100%;">
+    Atualizar
+    </button>
+    </div>
+    </form>
+
+    </div>
+    <?php endforeach; ?>
 <?php else: ?>
-<div style="width:70px; height:70px; background:#eee; text-align:center; line-height:70px; font-size:10px;">
-Sem foto
-</div>
+    <div style="text-align: center; padding: 40px; color: #666; background: #fff; border: 1px dashed #ccc; border-radius: 8px;">
+        Nenhum produto encontrado com os filtros selecionados.
+    </div>
 <?php endif; ?>
-</div>
-
-<div>
-<strong><?= htmlspecialchars($p['nome']) ?></strong><br>
-<span style="color:#28a745;">
-R$ <?= number_format($p['preco_venda'], 2, ',', '.') ?>
-</span>
-</div>
-
-<form method="POST" style="display: contents;">
-<input type="hidden" name="id_produto" value="<?= $p['id'] ?>">
-
-<div>
-<label style="font-size:12px;">Obs. no Cardápio:</label>
-<input type="text" 
-       name="obs_online" 
-       value="<?= htmlspecialchars($p['obs_online'] ?? '') ?>" 
-       style="width:100%; padding:5px;">
-</div>
-
-<div style="text-align:right;">
-<select name="aparecer_online" 
-        style="padding:5px; margin-bottom:5px; width:100%;">
-<option value="S" <?= $p['aparecer_online'] == 'S' ? 'selected' : '' ?>>✅ Visível</option>
-<option value="N" <?= $p['aparecer_online'] == 'N' ? 'selected' : '' ?>>❌ Oculto</option>
-</select>
-
-<button type="submit" 
-        name="btn_atualizar_online"
-        style="background:#007bff; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; width:100%;">
-Atualizar
-</button>
-</div>
-</form>
-
-</div>
-<?php endforeach; ?>
 
 </div>
 </body>
