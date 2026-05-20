@@ -6,15 +6,15 @@ require_once 'config/conexao.php';
 $data_inicio = $_GET['data_inicio'] ?? date('Y-m-d');
 $data_fim = $_GET['data_fim'] ?? date('Y-m-d');
 
-// Buscamos os pedidos manuais (pedidos) e do site (pedidos_online) usando UNION ALL
+// Buscamos os pedidos manuais (pedidos) e do site (pedidos_online) unificando seus respectivos clientes e endereços
 $sql = "
     SELECT 
         p.id,
         p.cliente_id,
         p.motoboy_id,
         p.valor_total, 
-        p.endereco_entrega, -- Campo original da tabela pedidos
-        c.nome as cliente_nome,
+        p.endereco_entrega, 
+        c.nome as cliente_nome, -- Busca na tabela 'clientes' (sistema)
         'sistema' as origem
     FROM pedidos p 
     LEFT JOIN clientes c ON p.cliente_id = c.id 
@@ -29,18 +29,17 @@ $sql = "
         po.cliente_id,
         po.motoboy_id,
         po.valor_total, 
-        po.endereco_completo as endereco_entrega, -- Apelidamos para bater com a de cima!
-        c.nome as cliente_nome,
+        po.endereco_completo as endereco_entrega, 
+        co.nome as cliente_nome, -- IMPORTANTE: Busca na tabela 'clientes_online' (co)
         'site' as origem
     FROM pedidos_online po 
-    LEFT JOIN clientes c ON po.cliente_id = c.id 
+    LEFT JOIN clientes_online co ON po.cliente_id = co.id -- IMPORTANTE: Corrigido para apontar para a tabela do site
     WHERE po.motoboy_id IS NULL 
     AND po.status NOT IN ('Finalizado', 'Cancelado')
     AND po.data_pedido::date BETWEEN :inicio_online AND :fim_online
 
     ORDER BY id DESC
 ";
-
 try {
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
