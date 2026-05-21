@@ -1,6 +1,9 @@
 <?php
 // config/funcoes.php
 
+// CORREÇÃO DO FUSO HORÁRIO NO PHP
+date_default_timezone_set('America/Sao_Paulo');
+
 /**
  * Registra ações críticas no banco de logs
  */
