@@ -7,10 +7,38 @@ require_once 'config/funcoes.php';
 $mes = $_GET['mes'] ?? date('m');
 $ano = $_GET['ano'] ?? date('Y');
 $visao = $_GET['visao'] ?? 'sintetico'; 
+$plano_conta_filtro = $_GET['plano_conta'] ?? ''; // Novo filtro adicionado
+
 $data_inicio = "$ano-$mes-01";
 $data_fim = date("Y-m-t", strtotime($data_inicio));
 
-// Lógica de Query ajustada para focar estritamente nas baixas reais realizadas
+/* ==========================================================================
+   1. BUSCA LISTA DE PLANO DE CONTAS (Para o dropdown do Filtro)
+   ========================================================================== */
+try {
+    $sql_plano = "SELECT id, descricao FROM plano_contas ORDER BY descricao ASC";
+    $stmt_plano = $pdo->query($sql_plano);
+    $lista_planos = $stmt_plano->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $lista_planos = [];
+}
+
+/* ==========================================================================
+   2. CONSTRUÇÃO DA QUERY DA DRE (Ajustada para contar Online e Presencial)
+   ========================================================================== */
+$condicaoDespesa = "";
+$params = [
+    ':inicio'  => $data_inicio, ':fim'  => $data_fim,
+    ':inicio2' => $data_inicio, ':fim2' => $data_fim,
+    ':inicio3' => $data_inicio, ':fim3' => $data_fim
+];
+
+// Se houver filtro de plano de contas, aplica na query de despesa
+if (!empty($plano_conta_filtro)) {
+    $condicaoDespesa = " AND cp.id_plano_conta = :id_plano ";
+    $params[':id_plano'] = (int)$plano_conta_filtro;
+}
+
 if ($visao == 'analitico') {
     $sql = "
     WITH Receitas AS (
@@ -18,22 +46,33 @@ if ($visao == 'analitico') {
         FROM pedidos p
         INNER JOIN formas_pagamento fp ON p.forma_pagamento_id = fp.id
         WHERE p.situacao = 'finalizado' AND p.data_pedido BETWEEN :inicio AND :fim
+        AND :filtra_receita_plano = '' -- Se filtrar plano de contas, anula receita no resultado
         
         UNION ALL
         
         SELECT po.data_pedido as data_mov, 'Online - ' || fp.descricao as descricao, po.valor_total as valor, 'RECEITA' as tipo_grupo 
         FROM pedidos_online po
         INNER JOIN formas_pagamento fp ON po.forma_pagamento_id = fp.id
-        WHERE po.status = 'finalizado' AND po.data_pedido BETWEEN :inicio2 AND :fim2
+        WHERE po.status = 'Finalizado' AND po.data_pedido BETWEEN :inicio2 AND :fim2 -- Corrigido para 'Finalizado'
+        AND :filtra_receita_plano2 = ''
     ),
     Despesas AS (
-        /* Trazemos o valor positivo do banco para padronizar a manipulação matemática no PHP */
-        SELECT cp.data_pagamento as data_mov, pc.descricao || ' (' || cp.descricao || ')' as descricao, cp.valor_total as valor, 'DESPESA' as tipo_grupo 
+        SELECT cp.data_pagamento as data_mov, pc.descricao || ' (' || cp.descricao || ')' as descricao, cp.valor_total as valor, 'DESPAN' as tipo_grupo -- Nome padronizado para ordenação
         FROM contas_pagar cp 
         JOIN plano_contas pc ON cp.id_plano_conta = pc.id
         WHERE cp.status = 'Pago' AND cp.data_pagamento BETWEEN :inicio3 AND :fim3
+        $condicaoDespesa
     )
-    SELECT * FROM Receitas UNION ALL SELECT * FROM Despesas ORDER BY tipo_grupo DESC, data_mov ASC";
+    SELECT data_mov, descricao, valor, CASE WHEN tipo_grupo = 'DESPAN' THEN 'DESPESA' ELSE 'RECEITA' END as tipo_grupo 
+    FROM Receitas 
+    UNION ALL 
+    SELECT data_mov, descricao, valor, CASE WHEN tipo_grupo = 'DESPAN' THEN 'DESPESA' ELSE 'RECEITA' END as tipo_grupo 
+    FROM Despesas 
+    ORDER BY tipo_grupo DESC, data_mov ASC";
+    
+    $params[':filtra_receita_plano'] = $plano_conta_filtro;
+    $params[':filtra_receita_plano2'] = $plano_conta_filtro;
+
 } else {
     $sql = "
     WITH Receitas AS (
@@ -41,6 +80,7 @@ if ($visao == 'analitico') {
         FROM pedidos p
         INNER JOIN formas_pagamento fp ON p.forma_pagamento_id = fp.id
         WHERE p.situacao = 'finalizado' AND p.data_pedido BETWEEN :inicio AND :fim 
+        AND :filtra_receita_plano = ''
         GROUP BY fp.descricao
         
         UNION ALL
@@ -48,27 +88,27 @@ if ($visao == 'analitico') {
         SELECT NULL as data_mov, 'Online - ' || fp.descricao as descricao, SUM(po.valor_total) as valor, 'RECEITA' as tipo_grupo
         FROM pedidos_online po
         INNER JOIN formas_pagamento fp ON po.forma_pagamento_id = fp.id
-        WHERE po.status = 'finalizado' AND po.data_pedido BETWEEN :inicio2 AND :fim2
+        WHERE po.status = 'Finalizado' AND po.data_pedido BETWEEN :inicio2 AND :fim2 -- Corrigido para 'Finalizado'
+        AND :filtra_receita_plano2 = ''
         GROUP BY fp.descricao
     ),
     Despesas AS (
-        /* Agrupamento por categoria do plano de contas baseado nas baixas do período */
         SELECT NULL as data_mov, pc.descricao, SUM(cp.valor_total) as valor, 'DESPESA' as tipo_grupo
         FROM contas_pagar cp 
         JOIN plano_contas pc ON cp.id_plano_conta = pc.id
         WHERE cp.status = 'Pago' AND cp.data_pagamento BETWEEN :inicio3 AND :fim3 
+        $condicaoDespesa
         GROUP BY pc.descricao
     )
     SELECT * FROM Receitas UNION ALL SELECT * FROM Despesas ORDER BY tipo_grupo DESC, valor DESC";
+    
+    $params[':filtra_receita_plano'] = $plano_conta_filtro;
+    $params[':filtra_receita_plano2'] = $plano_conta_filtro;
 }
 
 try {
     $stmt = $pdo->prepare($sql); 
-    $stmt->execute([
-        ':inicio'  => $data_inicio, ':fim'  => $data_fim,
-        ':inicio2' => $data_inicio, ':fim2' => $data_fim,
-        ':inicio3' => $data_inicio, ':fim3' => $data_fim
-    ]);
+    $stmt->execute($params);
     $movimentacoes = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     die("Erro na consulta: " . $e->getMessage());
@@ -103,9 +143,9 @@ $totalDespesa = 0;
         .btn-print:hover { background-color: #7f8c8d; }
         .btn-visao { background-color: var(--warning); color: white; margin-right: 10px; }
 
-        .filtros { display: flex; gap: 10px; margin-bottom: 30px; align-items: flex-end; background: var(--light); padding: 15px; border-radius: 8px; }
-        .filtros select { padding: 8px; border-radius: 4px; border: 1px solid #ccc; }
-        .btn-filter { background: var(--info); color: white; }
+        .filtros { display: flex; gap: 15px; margin-bottom: 30px; align-items: flex-end; background: var(--light); padding: 15px; border-radius: 8px; flex-wrap: wrap; }
+        .filtros select { padding: 8px; border-radius: 4px; border: 1px solid #ccc; background: #fff; min-width: 120px; }
+        .btn-filter { background: var(--info); color: white; height: 36px; padding: 0 20px; }
 
         .dre-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         .dre-table th { text-align: left; padding: 15px; border-bottom: 2px solid var(--primary); color: var(--primary); }
@@ -128,7 +168,7 @@ $totalDespesa = 0;
     <div class="header-actions">
         <h2>DRE - Visão Realizada (Caixa) - <?= ucfirst($visao) ?></h2>
         <div>
-            <a href="?mes=<?= $mes ?>&ano=<?= $ano ?>&visao=<?= $visao == 'sintetico' ? 'analitico' : 'sintetico' ?>" class="btn btn-visao">
+            <a href="?mes=<?= $mes ?>&ano=<?= $ano ?>&visao=<?= $visao == 'sintetico' ? 'analitico' : 'sintetico' ?>&plano_conta=<?= urlencode($plano_conta_filtro) ?>" class="btn btn-visao">
                 Mudar para <?= $visao == 'sintetico' ? 'Analítico' : 'Sintético' ?>
             </a>
             
@@ -140,7 +180,7 @@ $totalDespesa = 0;
     <form method="GET" class="filtros">
         <input type="hidden" name="visao" value="<?= $visao ?>">
         <div>
-            <label>Mês:</label><br>
+            <label style="font-size:12px; font-weight:bold;">Mês:</label><br>
             <select name="mes">
                 <?php for($i=1; $i<=12; $i++): $m = sprintf('%02d', $i); ?>
                     <option value="<?= $m ?>" <?= $mes == $m ? 'selected' : '' ?>><?= $m ?></option>
@@ -148,13 +188,29 @@ $totalDespesa = 0;
             </select>
         </div>
         <div>
-            <label>Ano:</label><br>
+            <label style="font-size:12px; font-weight:bold;">Ano:</label><br>
             <select name="ano">
                 <option value="2025" <?= $ano == '2025' ? 'selected' : '' ?>>2025</option>
                 <option value="2026" <?= $ano == '2026' ? 'selected' : '' ?>>2026</option>
             </select>
         </div>
-        <button type="submit" class="btn btn-filter">Filtrar</button>
+        <div>
+            <label style="font-size:12px; font-weight:bold;">Plano de Contas:</label><br>
+            <select name="plano_conta" style="min-width: 200px;">
+                <option value="">-- Todos os Planos --</option>
+                <?php foreach($lista_planos as $plano): ?>
+                    <option value="<?= $plano['id'] ?>" <?= $plano_conta_filtro == $plano['id'] ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($plano['descricao']) ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div>
+            <button type="submit" class="btn btn-filter">Filtrar</button>
+            <?php if(!empty($plano_conta_filtro)): ?>
+                <a href="?mes=<?= $mes ?>&ano=<?= $ano ?>&visao=<?= $visao ?>" style="background:#6c757d; color:white; text-decoration:none; padding:8px 12px; border-radius:4px; font-size:13px; font-weight:bold; margin-left:5px; display:inline-block;">Limpar</a>
+            <?php endif; ?>
+        </div>
     </form>
 
     <table class="dre-table">
@@ -195,7 +251,6 @@ $totalDespesa = 0;
             </tr>
 
             <?php 
-            // Subtração limpa feita diretamente aqui no cálculo final
             $resultado = $totalReceita - $totalDespesa; 
             ?>
             <tr class="lucro-liquido">
