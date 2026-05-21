@@ -18,6 +18,9 @@ try {
 
     // Opcional
     $pdo->exec("SET search_path TO public");
+    
+    // CORREÇÃO DO FUSO HORÁRIO NO POSTGRESQL (Render/UTC -> Brasília)
+    $pdo->exec("SET TIME ZONE 'America/Sao_Paulo'");
 
 } catch (PDOException $e) {
 
