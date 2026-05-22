@@ -3,15 +3,22 @@ require_once 'config/sessao.php';
 require_once 'config/conexao.php';
 require_once 'config/funcoes.php';
 
-// 1. Definição dos Filtros (Datas e Clientes)
+// 1. Definição dos Filtros (Datas, Horas e Clientes)
 $data_inicial = $_GET['data_inicial'] ?? date('Y-m-01');
 $data_final   = $_GET['data_final']   ?? date('Y-m-t');
+$hora_inicial = $_GET['hora_inicial'] ?? '00:00';
+$hora_final   = $_GET['hora_final']   ?? '23:59';
 $clientes_selecionados = $_GET['clientes_ids'] ?? []; 
 
-// 2. Construção da Query
-$params = [$data_inicial . ' 00:00:00', $data_final . ' 23:59:59'];
+// Monta o timestamp completo unindo Data + Hora:segundos
+$timestamp_inicial = $data_inicial . ' ' . $hora_inicial . ':00';
+$timestamp_final   = $data_final . ' ' . $hora_final . ':59';
+
+// 2. Construção da Query com as novas colunas e filtros de horário
+$params = [$timestamp_inicial, $timestamp_final];
 $where = "WHERE p.data_pedido BETWEEN ? AND ? 
-          AND (p.status IN ('finalizado', 'cancelado') OR p.situacao IN ('finalizado', 'cancelado'))";
+          AND p.situacao = 'finalizado'
+          AND p.origem_tipo IN ('balcao', 'delivery')";
 
 if (!empty($clientes_selecionados)) {
     $placeholders = implode(',', array_fill(0, count($clientes_selecionados), '?'));
@@ -31,12 +38,10 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $vendas = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Cálculos de Totais (Apenas para finalizados)
+// Cálculos de Totais (Como a query já filtra os finalizados, basta somar direto)
 $total_vendas = 0;
 foreach($vendas as $v) { 
-    if(in_array($v['status'], ['finalizado']) || in_array($v['situacao'], ['finalizado'])){
-        $total_vendas += (float)$v['valor_total']; 
-    }
+    $total_vendas += (float)$v['valor_total']; 
 }
 
 $lista_clientes = $pdo->query("SELECT id, nome FROM clientes ORDER BY nome ASC")->fetchAll();
@@ -61,16 +66,13 @@ $lista_clientes = $pdo->query("SELECT id, nome FROM clientes ORDER BY nome ASC")
         th { background: #f7fafc; padding: 15px; text-align: left; color: #4a5568; border-bottom: 2px solid #edf2f7; font-size: 14px; }
         td { padding: 15px; border-bottom: 1px solid #edf2f7; color: #2d3748; font-size: 14px; }
         
-        /* Melhoria: Efeito Zebra */
         tbody tr:nth-child(even) { background-color: #fcfcfc; }
         tbody tr:hover { background-color: #f1f5f9; transition: 0.2s; }
 
         .badge-finalizado { background: #c6f6d5; color: #22543d; padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
-        .badge-cancelado { background: #fed7d7; color: #822727; padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
         
         .filtro-card { background: #f7fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 30px; }
         
-        /* Ajuste Select2 para combinar com seu layout */
         .select2-container--default .select2-selection--multiple { border: 1px solid #cbd5e0 !important; border-radius: 6px !important; min-height: 42px; }
 
         @media print {
@@ -84,23 +86,32 @@ $lista_clientes = $pdo->query("SELECT id, nome FROM clientes ORDER BY nome ASC")
 
 <div class="container">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 2px solid #3182ce; padding-bottom: 10px;">
-        <h2 style="margin:0; color: #1a202c;">📈 Relatório de Vendas</h2>
+        <h2 style="margin:0; color: #1a202c;">📈 Relatório de Vendas (Presencial & Delivery)</h2>
         <div class="no-print">
             <button onclick="exportarExcel()" style="background:#38a169; color:white; border:none; padding:8px 15px; border-radius:6px; font-weight:bold; cursor:pointer; margin-right:10px;">Excel 📥</button>
             <a href="dashboard.php" class="btn-voltar" style="text-decoration:none; color:#718096; font-weight:500;">← Voltar</a>
         </div>
     </div>
 
-    <form method="GET" id="formFiltro" class="filtro-card" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px;">
+    <!-- Formulário com novos campos de Hora -->
+    <form method="GET" id="formFiltro" class="filtro-card" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px;">
         <div>
-            <label style="font-size:11px; font-weight:bold; color:#718096; display:block; margin-bottom:5px;">INÍCIO</label>
+            <label style="font-size:11px; font-weight:bold; color:#718096; display:block; margin-bottom:5px;">DATA INÍCIO</label>
             <input type="date" name="data_inicial" value="<?= $data_inicial ?>" style="width:100%; padding:10px; border-radius:6px; border:1px solid #cbd5e0;">
         </div>
         <div>
-            <label style="font-size:11px; font-weight:bold; color:#718096; display:block; margin-bottom:5px;">FIM</label>
+            <label style="font-size:11px; font-weight:bold; color:#718096; display:block; margin-bottom:5px;">HORA INÍCIO</label>
+            <input type="time" name="hora_inicial" value="<?= $hora_inicial ?>" style="width:100%; padding:10px; border-radius:6px; border:1px solid #cbd5e0;">
+        </div>
+        <div>
+            <label style="font-size:11px; font-weight:bold; color:#718096; display:block; margin-bottom:5px;">DATA FIM</label>
             <input type="date" name="data_final" value="<?= $data_final ?>" style="width:100%; padding:10px; border-radius:6px; border:1px solid #cbd5e0;">
         </div>
-        <div style="grid-column: span 1;">
+        <div>
+            <label style="font-size:11px; font-weight:bold; color:#718096; display:block; margin-bottom:5px;">HORA FIM</label>
+            <input type="time" name="hora_final" value="<?= $hora_final ?>" style="width:100%; padding:10px; border-radius:6px; border:1px solid #cbd5e0;">
+        </div>
+        <div style="grid-column: span 1; min-width: 180px;">
             <label style="font-size:11px; font-weight:bold; color:#718096; display:block; margin-bottom:5px;">CLIENTES</label>
             <select name="clientes_ids[]" multiple class="select-busca" style="width:100%;">
                 <?php foreach($lista_clientes as $cl): ?>
@@ -122,34 +133,30 @@ $lista_clientes = $pdo->query("SELECT id, nome FROM clientes ORDER BY nome ASC")
                 <th>Data / Hora</th>
                 <th>Cód. Pedido</th>
                 <th>Cliente</th>
-                <th>Tipo</th>
+                <th>Tipo Origem</th>
                 <th>Valor Total</th>
                 <th style="text-align:center;">Status</th>
             </tr>
         </thead>
         <tbody>
             <?php if(empty($vendas)): ?>
-                <tr><td colspan="6" style="text-align:center; padding:30px; color:#718096;">Nenhuma venda encontrada.</td></tr>
+                <tr><td colspan="6" style="text-align:center; padding:30px; color:#718096;">Nenhuma venda encontrada para os critérios selecionados.</td></tr>
             <?php endif; ?>
 
-            <?php foreach($vendas as $v): 
-                $isCancelado = ($v['status'] == 'cancelado' || $v['situacao'] == 'cancelado');
-                $classe = $isCancelado ? 'badge-cancelado' : 'badge-finalizado';
-                $label = $isCancelado ? 'Cancelado' : 'Finalizado';
-            ?>
+            <?php foreach($vendas as $v): ?>
             <tr>
                 <td><?= date('d/m/Y H:i', strtotime($v['data_pedido'])) ?></td>
                 <td><strong>#<?= str_pad($v['id'], 5, '0', STR_PAD_LEFT) ?></strong></td>
                 <td><?= htmlspecialchars($v['nome_cliente'] ?: 'Consumidor Final') ?></td>
-                <td style="text-transform: capitalize;"><?= $v['tipo_venda'] ?></td>
+                <td style="text-transform: capitalize;"><?= htmlspecialchars($v['origem_tipo']) ?></td>
                 <td style="font-weight:bold;">R$ <?= number_format($v['valor_total'], 2, ',', '.') ?></td>
-                <td style="text-align:center;"><span class="<?= $classe ?>"><?= $label ?></span></td>
+                <td style="text-align:center;"><span class="badge-finalizado">Finalizado</span></td>
             </tr>
             <?php endforeach; ?>
         </tbody>
         <tfoot>
             <tr style="background: #f7fafc;">
-                <td colspan="4" style="text-align:right; font-weight:bold; padding:20px;">TOTAL EM VENDAS FINALIZADAS:</td>
+                <td colspan="4" style="text-align:right; font-weight:bold; padding:20px;">TOTAL EM VENDAS BALCÃO/DELIVERY:</td>
                 <td colspan="2" style="font-weight:bold; color:#38a169; font-size:18px; padding:20px;">R$ <?= number_format($total_vendas, 2, ',', '.') ?></td>
             </tr>
         </tfoot>
@@ -158,14 +165,12 @@ $lista_clientes = $pdo->query("SELECT id, nome FROM clientes ORDER BY nome ASC")
 
 <script>
 $(document).ready(function() {
-    // Inicializa o busca de clientes
     $('.select-busca').select2({
         placeholder: " Procure por nomes...",
         allowClear: true
     });
 });
 
-// Função para exportar para Excel (CSV)
 function exportarExcel() {
     let csv = [];
     let rows = document.querySelectorAll("table tr");
@@ -173,7 +178,6 @@ function exportarExcel() {
     for (let i = 0; i < rows.length; i++) {
         let row = [], cols = rows[i].querySelectorAll("td, th");
         for (let j = 0; j < cols.length; j++) {
-            // Limpa vírgulas e espaços para não quebrar o CSV
             let data = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, "").replace(/,/g, ".");
             row.push(data);
         }
