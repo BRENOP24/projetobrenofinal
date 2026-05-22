@@ -21,7 +21,6 @@ $sql = "SELECT
             p.codigo_barras, 
             p.nome, 
             p.estoque, 
-            p.preco_custo,
             c.nome as nome_categoria,
             (SELECT SUM(quantidade) FROM compras_itens WHERE id_produto = p.id) as total_entradas,
             (SELECT SUM(quantidade) FROM pedidos_itens WHERE produto_id = p.id) as total_saidas
@@ -54,10 +53,8 @@ try {
 
 // Cálculos de KPI
 $total_itens = 0;
-$valor_total_estoque = 0;
 foreach ($produtos as $prod) {
     $total_itens += (float)($prod['estoque'] ?? 0);
-    $valor_total_estoque += ((float)($prod['estoque'] ?? 0) * (float)($prod['preco_custo'] ?? 0));
 }
 ?>
 
@@ -87,7 +84,6 @@ foreach ($produtos as $prod) {
         .kpi-container { display: flex !important; gap: 20px !important; margin-bottom: 30px !important; }
         .kpi-card { flex: 1 !important; padding: 20px !important; border-radius: 12px !important; color: white !important; }
         .bg-blue { background: #3498db !important; }
-        .bg-green { background: #27ae60 !important; }
 
         .table-estoque { width: 100% !important; border-collapse: collapse !important; }
         .table-estoque th { background: #f8fafc !important; padding: 15px !important; border-bottom: 2px solid #dee2e6 !important; text-align: left !important; font-size: 0.8rem; color: #64748b; }
@@ -111,10 +107,6 @@ foreach ($produtos as $prod) {
         <div class="kpi-card bg-blue">
             <small>ESTOQUE NO FILTRO</small>
             <h2 style="margin:0;"><?= $total_itens ?> un</h2>
-        </div>
-        <div class="kpi-card bg-green">
-            <small>VALOR EM CUSTO</small>
-            <h2 style="margin:0;">R$ <?= number_format($valor_total_estoque, 2, ',', '.') ?></h2>
         </div>
     </div>
 
