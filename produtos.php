@@ -77,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // --- 2. LÓGICA DE FILTRO ---
 $busca        = $_GET['busca'] ?? "";
 $filtro_cat   = $_GET['filtro_categoria'] ?? "";
+// Pega o status do filtro via GET (Padrão: Ativo)
 $ver_inativos = (isset($_GET['status']) && $_GET['status'] == 'Inativo') ? 'Inativo' : 'Ativo';
 
 $sql_lista = "SELECT p.*, c.nome as nome_categoria FROM produtos p LEFT JOIN categorias c ON p.categoria_id = c.id WHERE p.status = ?";
@@ -93,7 +94,8 @@ if (!empty($filtro_cat)) {
     $params[] = (int)$filtro_cat;
 }
 
-$sql_lista .= " ORDER BY p.nome ASC LIMIT 100";
+// Atualizado para ordenar por código de barras de forma crescente (0-9, A-Z)
+$sql_lista .= " ORDER BY p.codigo_barras ASC LIMIT 100";
 $stmt = $pdo->prepare($sql_lista);
 $stmt->execute($params);
 $produtos = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -150,6 +152,7 @@ $categorias = $pdo->query("SELECT * FROM categorias ORDER BY nome ASC")->fetchAl
         .card-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; color: var(--gray-700); display: block; }
 
         .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
+        .form-grid-full { grid-column: span 2; }
         .form-group { display: flex; flex-direction: column; gap: 5px; }
         .form-group label { font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; }
         
@@ -166,7 +169,7 @@ $categorias = $pdo->query("SELECT * FROM categorias ORDER BY nome ASC")->fetchAl
 
         /* Filtros */
         .filter-bar { background: white; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; }
-        .btn-filter { background: var(--gray-700); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; }
+        .btn-filter { background: var(--gray-700); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; height: 41px; }
 
         /* Tabela */
         .table-container { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
@@ -187,6 +190,8 @@ $categorias = $pdo->query("SELECT * FROM categorias ORDER BY nome ASC")->fetchAl
         .actions { display: flex; gap: 10px; }
         .btn-action { text-decoration: none; font-size: 18px; transition: 0.2s; }
         .btn-action:hover { transform: scale(1.2); }
+        
+        .status-inativo-linha { color: #9ca3af; }
     </style>
 </head>
 <body>
@@ -200,14 +205,13 @@ $categorias = $pdo->query("SELECT * FROM categorias ORDER BY nome ASC")->fetchAl
 
         <?= $mensagem ?>
 
-        <!-- Cadastro -->
         <div class="card">
             <span class="card-title">Novo Produto</span>
             <form method="POST" enctype="multipart/form-data">
                 <div class="form-grid">
                     <div class="form-group" style="grid-column: span 1;">
                         <label>Cód. Barras</label>
-                        <input type="text" name="codigo_barras" placeholder="Automático">
+                        <input type="text" name="codigo_barras" placeholder="Digite o código manual" required>
                     </div>
                     <div class="form-group" style="grid-column: span 2;">
                         <label>Nome do Produto</label>
@@ -254,7 +258,6 @@ $categorias = $pdo->query("SELECT * FROM categorias ORDER BY nome ASC")->fetchAl
             </form>
         </div>
 
-        <!-- Filtros -->
         <form method="GET" class="filter-bar">
             <div class="form-group" style="flex: 2; min-width: 200px;">
                 <label>Pesquisar</label>
@@ -271,11 +274,19 @@ $categorias = $pdo->query("SELECT * FROM categorias ORDER BY nome ASC")->fetchAl
                     <?php endforeach; ?>
                 </select>
             </div>
+            
+            <div class="form-group" style="flex: 1; min-width: 130px;">
+                <label>Situação</label>
+                <select name="status">
+                    <option value="Ativo" <?= $ver_inativos == 'Ativo' ? 'selected' : '' ?>>Ativos</option>
+                    <option value="Inativo" <?= $ver_inativos == 'Inativo' ? 'selected' : '' ?>>Inativos</option>
+                </select>
+            </div>
+            
             <button type="submit" class="btn-filter">Filtrar</button>
-            <a href="produtos.php" class="btn-voltar" style="padding: 10px;">Limpar</a>
+            <a href="produtos.php" class="btn-voltar" style="padding: 10px; height: 41px; display: flex; align-items: center;">Limpar</a>
         </form>
 
-        <!-- Lista -->
         <div class="table-container">
             <table>
                 <thead>
@@ -291,7 +302,7 @@ $categorias = $pdo->query("SELECT * FROM categorias ORDER BY nome ASC")->fetchAl
                 <tbody>
                     <?php if (count($produtos) > 0): ?>
                         <?php foreach ($produtos as $p): ?>
-                        <tr>
+                        <tr class="<?= $ver_inativos == 'Inativo' ? 'status-inativo-linha' : '' ?>">
                             <td>
                                 <?php if($p['imagem']): ?>
                                     <img src="uploads/produtos/<?= $p['imagem'] ?>" class="img-prod">
@@ -311,12 +322,15 @@ $categorias = $pdo->query("SELECT * FROM categorias ORDER BY nome ASC")->fetchAl
                                 </span>
                             </td>
                             <td>
-                                <div class="actions">
+                                <div class="actions" style="justify-content: center;">
                                     <a href="editar_produto.php?id=<?= $p['id'] ?>" class="btn-action" title="Editar">✏️</a>
-                                    <form method="POST" onsubmit="return confirm('Inativar este produto?')" style="margin: 0;">
-                                        <input type="hidden" name="id_produto" value="<?= $p['id'] ?>">
-                                        <button type="submit" name="btn_inativar" class="btn-action" style="background:none; border:none; cursor:pointer;">🚫</button>
-                                    </form>
+                                    
+                                    <?php if ($ver_inativos == 'Ativo'): ?>
+                                        <form method="POST" onsubmit="return confirm('Inativar este produto?')" style="margin: 0;">
+                                            <input type="hidden" name="id_produto" value="<?= $p['id'] ?>">
+                                            <button type="submit" name="btn_inativar" class="btn-action" style="background:none; border:none; cursor:pointer;" title="Inativar">🚫</button>
+                                        </form>
+                                    <?php endif; ?>
                                 </div>
                             </td>
                         </tr>

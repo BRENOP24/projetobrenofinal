@@ -1,24 +1,56 @@
 <?php
 require_once 'config/conexao.php';
+require_once 'config/sessao.php';
+require_once 'config/funcoes.php';
 
-// INSERT
+// INATIVAR (GET)
+if (isset($_GET['inativar'])) {
+    $id_inativar = (int)$_GET['inativar'];
+    $stmt = $pdo->prepare("UPDATE motoboys SET status = 'Inativo' WHERE id = ?");
+    $stmt->execute([$id_inativar]);
+    header("Location: " . $_SERVER['PHP_SELF']); // Limpa a URL após a ação
+    exit;
+}
+
+// CARREGAR DADOS PARA EDIÇÃO (GET)
+$motoboy_editando = null;
+if (isset($_GET['editar'])) {
+    $id_editar = (int)$_GET['editar'];
+    $stmt = $pdo->prepare("SELECT * FROM motoboys WHERE id = ?");
+    $stmt->execute([$id_editar]);
+    $motoboy_editando = $stmt->fetch(PDO::FETCH_ASSOC);
+}
+
+// PROCESSAR FORMULÁRIO (INSERT OU UPDATE)
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-
+    $id = !empty($_POST['id']) ? (int)$_POST['id'] : null;
     $nome = $_POST['nome'];
     $cpf = $_POST['cpf'];
     $endereco = $_POST['endereco'];
     $latitude = $_POST['latitude'];
     $longitude = $_POST['longitude'];
 
-    $stmt = $pdo->prepare("
-        INSERT INTO motoboys (nome, cpf, endereco, latitude, longitude)
-        VALUES (?, ?, ?, ?, ?)
-    ");
-
-    $stmt->execute([$nome, $cpf, $endereco, $latitude, $longitude]);
+    if ($id) {
+        // UPDATE
+        $stmt = $pdo->prepare("
+            UPDATE motoboys 
+            SET nome = ?, cpf = ?, endereco = ?, latitude = ?, longitude = ? 
+            WHERE id = ?
+        ");
+        $stmt->execute([$nome, $cpf, $endereco, $latitude, $longitude, $id]);
+    } else {
+        // INSERT (Garante status 'Ativo' por padrão ao cadastrar)
+        $stmt = $pdo->prepare("
+            INSERT INTO motoboys (nome, cpf, endereco, latitude, longitude, status)
+            VALUES (?, ?, ?, ?, ?, 'Ativo')
+        ");
+        $stmt->execute([$nome, $cpf, $endereco, $latitude, $longitude]);
+    }
+    header("Location: " . $_SERVER['PHP_SELF']);
+    exit;
 }
 
-// SELECT
+// SELECT (Busca todos os registros, destacando os ativos e inativos)
 $stmt = $pdo->query("SELECT * FROM motoboys ORDER BY id DESC");
 $motoboys = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
@@ -43,7 +75,7 @@ $motoboys = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
 
         .container {
-            max-width: 900px;
+            max-width: 1000px; /* Um pouco mais largo para acomodar a coluna de ações */
             margin: auto;
         }
 
@@ -91,6 +123,15 @@ $motoboys = $stmt->fetchAll(PDO::FETCH_ASSOC);
             background: #0056b3;
         }
 
+        .btn-cancelar {
+            display: block;
+            text-align: center;
+            margin-top: 10px;
+            color: #666;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -115,48 +156,86 @@ $motoboys = $stmt->fetchAll(PDO::FETCH_ASSOC);
             padding: 20px;
             color: #777;
         }
+
+        /* Estilos das Ações */
+        .btn-acao {
+            padding: 5px 10px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: bold;
+            margin-right: 5px;
+        }
+
+        .btn-editar {
+            background: #ffc107;
+            color: #212529;
+        }
+
+        .btn-inativar {
+            background: #dc3545;
+            color: #fff;
+        }
+
+        .status-inativo {
+            color: #aaa;
+            text-decoration: line-through;
+        }
+
+        .badge-inativo {
+            background: #e2e3e5;
+            color: #383d41;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
     </style>
 </head>
 <body>
 
 <div class="container">
 
-    <!-- FORM -->
     <div class="card">
-        <h2>Cadastro de Motoboy</h2>
+        <h2><?= $motoboy_editando ? 'Editar Motoboy' : 'Cadastro de Motoboy' ?></h2>
 
         <form method="POST">
+            <input type="hidden" name="id" value="<?= $motoboy_editando['id'] ?? '' ?>">
             
             <div class="form-group">
                 <label>Nome</label>
-                <input type="text" name="nome" required>
+                <input type="text" name="nome" value="<?= htmlspecialchars($motoboy_editando['nome'] ?? '') ?>" required>
             </div>
 
             <div class="form-group">
                 <label>CPF</label>
-                <input type="text" name="cpf" maxlength="14" placeholder="000.000.000-00" required>
+                <input type="text" name="cpf" maxlength="14" placeholder="000.000.000-00" value="<?= htmlspecialchars($motoboy_editando['cpf'] ?? '') ?>" required>
             </div>
 
             <div class="form-group">
                 <label>Endereço</label>
-                <input type="text" name="endereco" required>
+                <input type="text" name="endereco" value="<?= htmlspecialchars($motoboy_editando['endereco'] ?? '') ?>" required>
             </div>
 
             <div class="form-group">
                 <label>Latitude</label>
-                <input type="text" name="latitude" required>
+                <input type="text" name="latitude" value="<?= htmlspecialchars($motoboy_editando['latitude'] ?? '') ?>" required>
             </div>
 
             <div class="form-group">
                 <label>Longitude</label>
-                <input type="text" name="longitude" required>
+                <input type="text" name="longitude" value="<?= htmlspecialchars($motoboy_editando['longitude'] ?? '') ?>" required>
             </div>
 
-            <button type="submit" class="btn">Cadastrar</button>
+            <button type="submit" class="btn">
+                <?= $motoboy_editando ? 'Salvar Alterações' : 'Cadastrar' ?>
+            </button>
+
+            <?php if ($motoboy_editando): ?>
+                <a href="<?= $_SERVER['PHP_SELF'] ?>" class="btn-cancelar">Cancelar Edição</a>
+            <?php endif; ?>
         </form>
     </div>
 
-    <!-- LISTA -->
     <div class="card">
         <h2>Motoboys Cadastrados</h2>
 
@@ -169,24 +248,36 @@ $motoboys = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <th>Endereço</th>
                     <th>Latitude</th>
                     <th>Longitude</th>
+                    <th>Ações</th>
                 </tr>
             </thead>
             <tbody>
 
             <?php if (count($motoboys) > 0): ?>
                 <?php foreach ($motoboys as $m): ?>
-                    <tr>
+                    <?php $isInativo = ($m['status'] ?? '') === 'Inativo'; ?>
+                    <tr class="<?= $isInativo ? 'status-inativo' : '' ?>">
                         <td><?= $m['id'] ?></td>
-                        <td><?= htmlspecialchars($m['nome']) ?></td>
+                        <td>
+                            <?= htmlspecialchars($m['nome']) ?>
+                            <?= $isInativo ? '<span class="badge-inativo">Inativo</span>' : '' ?>
+                        </td>
                         <td><?= $m['cpf'] ?></td>
                         <td><?= htmlspecialchars($m['endereco']) ?></td>
                         <td><?= $m['latitude'] ?></td>
                         <td><?= $m['longitude'] ?></td>
+                        <td>
+                            <a href="?editar=<?= $m['id'] ?>" class="btn-acao btn-editar">Editar</a>
+                            
+                            <?php if (!$isInativo): ?>
+                                <a href="?inativar=<?= $m['id'] ?>" class="btn-acao btn-inativar" onclick="return confirm('Tem certeza que deseja inativar este motoboy?')">Inativar</a>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
             <?php else: ?>
                 <tr>
-                    <td colspan="6" class="vazio">Nenhum motoboy cadastrado</td>
+                    <td colspan="7" class="vazio">Nenhum motoboy cadastrado</td>
                 </tr>
             <?php endif; ?>
 
