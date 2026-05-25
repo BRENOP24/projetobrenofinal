@@ -1,4 +1,9 @@
 <?php 
+// --- FORÇAR EXIBIÇÃO DE ERROS NO RENDER PARA DEBUG ---
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
 require_once 'config/sessao.php'; 
 require_once 'config/conexao.php';
 require_once 'config/funcoes.php';
@@ -43,6 +48,7 @@ function uploadParaCloudinary($arquivoTmp) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0); // Ajuste crucial para ambiente Linux/Render
 
     $resposta = curl_exec($ch);
     $erro = curl_error($ch);
@@ -79,7 +85,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $imagem_nome    = null;
 
         // Processa o upload se houver um arquivo enviado
-// Processa o upload se houver um arquivo enviado
         if (isset($_FILES['imagem']) && $_FILES['imagem']['error'] === 0) {
             $resultado = uploadParaCloudinary($_FILES['imagem']['tmp_name']);
             
@@ -219,6 +224,7 @@ $categorias = $pdo->query("SELECT * FROM categorias ORDER BY nome ASC")->fetchAl
         .card-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; color: var(--gray-700); display: block; }
 
         .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
+        .form-grid > * { min-width: 0; } /* Previne quebras latentes */
         .form-group { display: flex; flex-direction: column; gap: 5px; }
         .form-group label { font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; }
         
