@@ -1,107 +1,151 @@
-<?php
-// ==========================================
-// CONFIGURAÇÕES DO CLOUDINARY
-// ==========================================
+<?php 
+require_once 'config/sessao.php'; 
+require_once 'config/conexao.php';
+require_once 'config/funcoes.php';
+
+// Suas credenciais do Cloudinary configuradas
 define('CLOUDINARY_CLOUD_NAME', 'Raiz');
 define('CLOUDINARY_API_KEY', '591916441776592');
 define('CLOUDINARY_API_SECRET', 'SyY1qSVlTc9C1egsVUlfMACCU_g');
 
-$mensagem_alerta = "";
+$mensagem = "";
 
-// Lógica de salvamento do produto
-if (isset($_POST['btn_salvar'])) {
-    $url_imagem_final = null;
+// --- FUNÇÃO DE UPLOAD ASSINADO PARA O CLOUDINARY ---
+function uploadParaCloudinary($arquivoTmp) {
+    $timestamp = time();
+    
+    // 1. Montar a string de parâmetros que precisa ser assinada (em ordem alfabética)
+    // Usamos o diretório 'produtos' para organizar os arquivos no seu painel
+    $paramsToSign = "folder=produtos&timestamp=" . $timestamp;
+    
+    // 2. Gerar a assinatura SHA-1 concatenando com o seu API_SECRET
+    $signature = sha1($paramsToSign . CLOUDINARY_API_SECRET);
 
-    // Verificar se uma foto foi enviada
-    if (isset($_FILES['imagem']) && $_FILES['imagem']['error'] === UPLOAD_ERR_OK) {
-        $file_tmp = $_FILES['imagem']['tmp_name'];
-        $timestamp = time();
-        
-        // Gerar assinatura de segurança para a API do Cloudinary
-        $sign_string = "timestamp=$timestamp" . CLOUDINARY_API_SECRET;
-        $signature = sha1($sign_string);
+    $url = "https://api.cloudinary.com/v1_1/" . CLOUDINARY_CLOUD_NAME . "/image/upload";
 
-        // Envio dos dados via cURL
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, "https://api.cloudinary.com/v1_1/" . CLOUDINARY_CLOUD_NAME . "/image/upload");
-        curl_setopt($ch, CURLOPT_POST, true);
-        
-        $post_fields = [
-            'file' => new CURLFile($file_tmp),
-            'api_key' => CLOUDINARY_API_KEY,
-            'timestamp' => $timestamp,
-            'signature' => $signature
-        ];
-        
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $post_fields);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        
-        $response = curl_exec($ch);
-        $err = curl_error($ch);
-        curl_close($ch);
+    // 3. Montar o payload do POST com o arquivo e os parâmetros de autenticação
+    $data = [
+        'file'      => new CURLFile($arquivoTmp),
+        'api_key'   => CLOUDINARY_API_KEY,
+        'timestamp' => $timestamp,
+        'signature' => $signature,
+        'folder'    => 'produtos'
+    ];
 
-        if ($err) {
-            $mensagem_alerta = "<div class='alert error'>Erro na comunicação com o Cloudinary: " . $err . "</div>";
-        } else {
-            $response_data = json_decode($response, true);
-            if (isset($response_data['secure_url'])) {
-                // Sucesso: temos a URL da internet!
-                $url_imagem_final = $response_data['secure_url'];
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+
+    $resposta = curl_exec($ch);
+    $erro = curl_error($ch);
+    curl_close($ch);
+
+    if ($erro) {
+        return null;
+    }
+
+    $json = json_decode($resposta, true);
+    
+    // Retorna a URL segura gerada pelo Cloudinary
+    return $json['secure_url'] ?? null;
+}
+
+// --- 1. LÓGICA PARA SALVAR ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['btn_salvar'])) {
+        $codigo_barras = trim($_POST['codigo_barras'] ?? "");
+        $nome           = trim($_POST['nome'] ?? "");
+        $preco          = str_replace(',', '.', $_POST['preco'] ?? "0"); 
+        $estoque        = $_POST['estoque'] ?? 0;
+        $categoria      = $_POST['categoria_id'] ?? "";
+        $online         = $_POST['aparecer_online'] ?? "N";
+        $descricao      = trim($_POST['descricao'] ?? "");
+        $unidade        = $_POST['unidade_medida'] ?? "UN";
+        $imagem_nome    = null;
+
+        // Upload via Cloudinary
+        if (isset($_FILES['imagem']) && $_FILES['imagem']['error'] === 0) {
+            $url_cloudinary = uploadParaCloudinary($_FILES['imagem']['tmp_name']);
+            if ($url_cloudinary) {
+                $imagem_nome = $url_cloudinary; // Salva a URL HTTPS completa no PostgreSQL
             } else {
-                $msg_erro = $response_data['error']['message'] ?? 'Erro desconhecido';
-                $mensagem_alerta = "<div class='alert error'>Erro ao subir imagem: " . $msg_erro . "</div>";
+                $mensagem = "<div class='alert error'>❌ Erro ao enviar a imagem para o Cloudinary. Verifique as credenciais.</div>";
             }
+        }
+
+        try {
+            $sql = "INSERT INTO produtos (codigo_barras, nome, preco_venda, estoque, categoria_id, aparecer_online, descricao, unidade_medida, imagem, status) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Ativo')";
+            $stmt = $pdo->prepare($sql);
+            if ($stmt->execute([$codigo_barras, $nome, $preco, $estoque, $categoria, $online, $descricao, $unidade, $imagem_nome])) {
+                
+                if (function_exists('registrarLog')) {
+                    $detalhes = "Cadastrou o produto: {$nome} | Cód: {$codigo_barras} | Estoque Inicial: {$estoque} {$unidade} | Preço: R$ {$preco}";
+                    registrarLog($pdo, 'INSERCAO', 'produtos', $detalhes);
+                }
+
+                $mensagem = "<div class='alert success'>✅ Produto cadastrado com sucesso!</div>";
+            }
+        } catch (PDOException $e) {
+            $mensagem = "<div class='alert error'>❌ Erro ao salvar: " . $e->getMessage() . "</div>";
         }
     }
 
-    // Coleta dos demais campos do formulário
-    $codigo_barras   = $_POST['codigo_barras'] ?? '';
-    $nome            = $_POST['nome'] ?? '';
-    $preco           = $_POST['preco'] ?? '';
-    $unidade_medida  = $_POST['unidade_medida'] ?? 'UN';
-    $estoque         = $_POST['estoque'] ?? 0;
-    $categoria_id    = $_POST['categoria_id'] ?? '';
-    $aparecer_online = $_POST['aparecer_online'] ?? 'N';
+    if (isset($_POST['btn_inativar'])) {
+        $id_inativar = $_POST['id_produto'];
+        
+        try {
+            $stmt_busca = $pdo->prepare("SELECT nome, codigo_barras FROM produtos WHERE id = ?");
+            $stmt_busca->execute([$id_inativar]);
+            $prod_info = $stmt_busca->fetch(PDO::FETCH_ASSOC);
+            $nome_produto = $prod_info['nome'] ?? "Desconhecido";
+            $cod_produto  = $prod_info['codigo_barras'] ?? "Sem Código";
 
-    // -----------------------------------------------------------------
-    // SUA LOGICA DE INSERT NO BANCO DE DADOS ENTRA AQUI
-    // -----------------------------------------------------------------
-    // Na sua query, a coluna 'imagem' deve receber a variável $url_imagem_final
-    // Exemplo:
-    // $stmt = $pdo->prepare("INSERT INTO produtos (...) VALUES (..., :imagem)");
-    // $stmt->bindValue(':imagem', $url_imagem_final);
-    // $stmt->execute();
-    // -----------------------------------------------------------------
-    
-    if (empty($mensagem_alerta)) {
-        $mensagem_alerta = "<div class='alert success'>📦 Produto gravado com sucesso no sistema!</div>";
+            if ($pdo->prepare("UPDATE produtos SET status = 'Inativo' WHERE id = ?")->execute([$id_inativar])) {
+                
+                if (function_exists('registrarLog')) {
+                    $detalhes = "Inativou o produto: {$nome_produto} | Cód: {$cod_produto} (ID do Banco: {$id_inativar})";
+                    registrarLog($pdo, 'INATIVACAO', 'produtos', $detalhes);
+                }
+
+                $mensagem = "<div class='alert warning'>⚠️ Produto movido para inativos!</div>";
+            }
+        } catch (PDOException $e) {
+            $mensagem = "<div class='alert error'>❌ Erro ao inativar: " . $e->getMessage() . "</div>";
+        }
     }
 }
 
-// Lógica simulada para os produtos da tabela (substitua pela sua consulta do banco)
-// Note que adicionei URLs reais/exemplo do Cloudinary ou caminhos antigos para demonstração
-$produtos = [
-    [
-        'id' => 1,
-        'imagem' => 'https://res.cloudinary.com/' . CLOUDINARY_CLOUD_NAME . '/image/upload/v123456/exemplo_coca.jpg', // Exemplo Cloudinary
-        'codigo_barras' => '1213',
-        'nome' => 'Coca Cola Lata 350ml',
-        'categoria' => 'Bebidas',
-        'preco' => '8,00',
-        'estoque' => '8 UN'
-    ],
-    [
-        'id' => 4,
-        'imagem' => 'uploads/produtos/13154142f8f43f67b1c3742297e14777.jpg', // Exemplo antigo local
-        'codigo_barras' => '2563',
-        'nome' => 'Cafe Expresso',
-        'categoria' => 'Bebidas',
-        'preco' => '6,50',
-        'estoque' => '11 UN'
-    ],
-    // Seus outros produtos viriam aqui do banco...
-];
+// --- 2. LÓGICA DE FILTRO ---
+$busca        = $_GET['busca'] ?? "";
+$filtro_cat   = $_GET['filtro_categoria'] ?? "";
+$ver_inativos = (isset($_GET['status']) && $_GET['status'] == 'Inativo') ? 'Inativo' : 'Ativo';
+
+$sql_lista = "SELECT p.*, c.nome as nome_categoria FROM produtos p LEFT JOIN categorias c ON p.categoria_id = c.id WHERE p.status = ?";
+$params = [$ver_inativos];
+
+if (!empty($busca)) {
+    $sql_lista .= " AND (p.nome ILIKE ? OR p.codigo_barras = ?)";
+    $params[] = "%$busca%";
+    $params[] = $busca;
+}
+
+if (!empty($filtro_cat)) {
+    $sql_lista .= " AND p.categoria_id = ?";
+    $params[] = (int)$filtro_cat;
+}
+
+$sql_lista .= " ORDER BY p.codigo_barras ASC LIMIT 100";
+$stmt = $pdo->prepare($sql_lista);
+$stmt->execute($params);
+$produtos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$categorias = $pdo->query("SELECT * FROM categorias ORDER BY nome ASC")->fetchAll(PDO::FETCH_ASSOC);
 ?>
+
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -121,14 +165,16 @@ $produtos = [
             --gray-700: #374151;
             --text-main: #1f2937;
         }
+
         body { 
             font-family: 'Inter', sans-serif; 
             background-color: #f8fafc; 
             color: var(--text-main);
             margin: 0; padding: 20px;
         }
+
         .container { max-width: 1200px; margin: auto; }
-        /* Cabeçalho */
+
         .header { 
             display: flex; justify-content: space-between; align-items: center; 
             margin-bottom: 30px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -137,13 +183,11 @@ $produtos = [
         .btn-voltar { background: var(--gray-100); color: var(--gray-700); padding: 8px 16px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 500; transition: 0.3s; }
         .btn-voltar:hover { background: var(--gray-200); }
 
-        /* Alertas */
         .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: 500; font-size: 14px; }
         .success { background: #dcfce7; color: #166534; }
         .error { background: #fee2e2; color: #991b1b; }
         .warning { background: #fef3c7; color: #92400e; }
 
-        /* Card de Cadastro */
         .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 30px; }
         .card-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; color: var(--gray-700); display: block; }
 
@@ -162,11 +206,9 @@ $produtos = [
         }
         .btn-save:hover { background: var(--primary-hover); transform: translateY(-1px); }
 
-        /* Filtros */
         .filter-bar { background: white; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; }
         .btn-filter { background: var(--gray-700); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; height: 41px; }
 
-        /* Tabela */
         .table-container { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
         table { width: 100%; border-collapse: collapse; }
         thead { background: #f9fafb; border-bottom: 1px solid var(--gray-200); }
@@ -175,13 +217,17 @@ $produtos = [
         tr:hover { background-color: #fbfbfb; }
 
         .img-prod { width: 45px; height: 45px; object-fit: cover; border-radius: 8px; background: #eee; }
-        .badge-estoque { padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+        
+        .badge-estoque {
+            padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600;
+        }
         .low-stock { background: #fee2e2; color: #dc2626; }
         .ok-stock { background: #dcfce7; color: #059669; }
 
         .actions { display: flex; gap: 10px; }
         .btn-action { text-decoration: none; font-size: 18px; transition: 0.2s; }
         .btn-action:hover { transform: scale(1.2); }
+        
         .status-inativo-linha { color: #9ca3af; }
     </style>
 </head>
@@ -194,8 +240,8 @@ $produtos = [
             <a href="dashboard.php" class="btn-voltar">⬅ Voltar ao Painel</a>
         </div>
 
-        <?php echo $mensagem_alerta; ?>
-        
+        <?= $mensagem ?>
+
         <div class="card">
             <span class="card-title">Novo Produto</span>
             <form method="POST" enctype="multipart/form-data">
@@ -228,16 +274,9 @@ $produtos = [
                         <label>Categoria</label>
                         <select name="categoria_id" required>
                             <option value="">Selecione...</option>
-                            <option value="1">Bebidas</option>
-                            <option value="7">Diversos</option>
-                            <option value="2">Doces</option>
-                            <option value="10">Farmácia</option>
-                            <option value="5">Lanches</option>
-                            <option value="3">Limpeza</option>
-                            <option value="8">Mercado</option>
-                            <option value="4">Padaria</option>
-                            <option value="6">Pizzas</option>
-                            <option value="9">Uso Consumo</option>
+                            <?php foreach ($categorias as $cat): ?>
+                                <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['nome']) ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                     <div class="form-group">
@@ -259,31 +298,28 @@ $produtos = [
         <form method="GET" class="filter-bar">
             <div class="form-group" style="flex: 2; min-width: 200px;">
                 <label>Pesquisar</label>
-                <input type="text" name="busca" value="" placeholder="Nome ou código...">
+                <input type="text" name="busca" value="<?= htmlspecialchars($busca) ?>" placeholder="Nome ou código...">
             </div>
             <div class="form-group" style="flex: 1; min-width: 150px;">
                 <label>Categoria</label>
                 <select name="filtro_categoria">
                     <option value="">Todas</option>
-                    <option value="1">Bebidas</option>
-                    <option value="7">Diversos</option>
-                    <option value="2">Doces</option>
-                    <option value="10">Farmácia</option>
-                    <option value="5">Lanches</option>
-                    <option value="3">Limpeza</option>
-                    <option value="8">Mercado</option>
-                    <option value="4">Padaria</option>
-                    <option value="6">Pizzas</option>
-                    <option value="9">Uso Consumo</option>
+                    <?php foreach ($categorias as $cat): ?>
+                        <option value="<?= $cat['id'] ?>" <?= ($filtro_cat == $cat['id']) ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($cat['nome']) ?>
+                        </option>
+                    <?php endforeach; ?>
                 </select>
             </div>
+            
             <div class="form-group" style="flex: 1; min-width: 130px;">
                 <label>Situação</label>
                 <select name="status">
-                    <option value="Ativo" selected>Ativos</option>
-                    <option value="Inativo">Inativos</option>
+                    <option value="Ativo" <?= $ver_inativos == 'Ativo' ? 'selected' : '' ?>>Ativos</option>
+                    <option value="Inativo" <?= $ver_inativos == 'Inativo' ? 'selected' : '' ?>>Inativos</option>
                 </select>
             </div>
+            
             <button type="submit" class="btn-filter">Filtrar</button>
             <a href="produtos.php" class="btn-voltar" style="padding: 10px; height: 41px; display: flex; align-items: center;">Limpar</a>
         </form>
@@ -301,39 +337,44 @@ $produtos = [
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($produtos as $prod): ?>
-                        <tr>
+                    <?php if (count($produtos) > 0): ?>
+                        <?php foreach ($produtos as $p): ?>
+                        <tr class="<?= $ver_inativos == 'Inativo' ? 'status-inativo-linha' : '' ?>">
                             <td>
-                                <?php 
-                                // Tratamento inteligente para a tag img:
-                                // Se a imagem guardada for um link completo (Cloudinary), usa direto.
-                                // Se for apenas o nome do arquivo antigo, concatena com a pasta local.
-                                $caminho_imagem = (strpos($prod['imagem'], 'http') === 0) ? $prod['imagem'] : 'uploads/produtos/' . basename($prod['imagem']);
-                                ?>
-                                <img src="<?php echo !empty($prod['imagem']) ? $caminho_imagem : 'uploads/produtos/sem-foto.png'; ?>" class="img-prod">
+                                <?php if($p['imagem']): ?>
+                                    <img src="<?= $p['imagem'] ?>" class="img-prod">
+                                <?php else: ?>
+                                    <div class="img-prod" style="display: flex; align-items: center; justify-content: center; font-size: 9px; color: #ccc;">SEM FOTO</div>
+                                <?php endif; ?>
                             </td>
-                            <td style="font-family: monospace; font-weight: 600; color: #666;"><?php echo $prod['codigo_barras']; ?></td>
+                            <td style="font-family: monospace; font-weight: 600; color: #666;"><?= $p['codigo_barras'] ?></td>
                             <td>
-                                <div style="font-weight: 600; color: var(--gray-700);"><?php echo $prod['nome']; ?></div>
-                                <div style="font-size: 12px; color: #9ca3af;"><?php echo $prod['categoria']; ?></div>
+                                <div style="font-weight: 600; color: var(--gray-700);"><?= htmlspecialchars($p['nome']) ?></div>
+                                <div style="font-size: 12px; color: #9ca3af;"><?= htmlspecialchars($p['nome_categoria'] ?? 'Geral') ?></div>
                             </td>
-                            <td style="font-weight: 700;">R$ <?php echo $prod['preco']; ?></td>
+                            <td style="font-weight: 700;">R$ <?= number_format($p['preco_venda'], 2, ',', '.') ?></td>
                             <td>
-                                <span class="badge-estoque ok-stock">
-                                    <?php echo $prod['estoque']; ?>
+                                <span class="badge-estoque <?= $p['estoque'] <= 0 ? 'low-stock' : 'ok-stock' ?>">
+                                    <?= $p['estoque'] ?> <?= $p['unidade_medida'] ?>
                                 </span>
                             </td>
                             <td>
                                 <div class="actions" style="justify-content: center;">
-                                    <a href="editar_produto.php?id=<?php echo $prod['id']; ?>" class="btn-action" title="Editar">✏️</a>
-                                    <form method="POST" onsubmit="return confirm('Inativar este produto?')" style="margin: 0;">
-                                        <input type="hidden" name="id_produto" value="<?php echo $prod['id']; ?>">
-                                        <button type="submit" name="btn_inativar" class="btn-action" style="background:none; border:none; cursor:pointer;" title="Inativar">🚫</button>
-                                    </form>
+                                    <a href="editar_produto.php?id=<?= $p['id'] ?>" class="btn-action" title="Editar">✏️</a>
+                                    
+                                    <?php if ($ver_inativos == 'Ativo'): ?>
+                                        <form method="POST" onsubmit="return confirm('Inativar este produto?')" style="margin: 0;">
+                                            <input type="hidden" name="id_produto" value="<?= $p['id'] ?>">
+                                            <button type="submit" name="btn_inativar" class="btn-action" style="background:none; border:none; cursor:pointer;" title="Inativar">🚫</button>
+                                        </form>
+                                    <?php endif; ?>
                                 </div>
                             </td>
                         </tr>
-                    <?php endforeach; ?>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <tr><td colspan="6" style="padding: 40px; text-align: center; color: #9ca3af;">Nenhum produto encontrado na base de dados.</td></tr>
+                    <?php endif; ?>
                 </tbody>
             </table>
         </div>
