@@ -3,8 +3,8 @@ require_once 'config/sessao.php';
 require_once 'config/conexao.php';
 require_once 'config/funcoes.php';
 
-// Suas credenciais do Cloudinary configuradas
-define('CLOUDINARY_CLOUD_NAME', 'Raiz');
+// Suas credenciais do Cloudinary configuradas e validadas
+define('CLOUDINARY_CLOUD_NAME', 'dvlh11o6w');
 define('CLOUDINARY_API_KEY', '591916441776592');
 define('CLOUDINARY_API_SECRET', 'SyY1qSVlTc9C1egsVUlfMACCU_g');
 
@@ -22,7 +22,7 @@ function uploadParaCloudinary($arquivoTmp) {
     ];
     ksort($params);
 
-    // 2. Monta a string query para assinar
+    // 2. Monta a string query e gera a assinatura SHA-1
     $paramsToSign = http_build_query($params);
     $signature = sha1($paramsToSign . CLOUDINARY_API_SECRET);
 
@@ -50,16 +50,18 @@ function uploadParaCloudinary($arquivoTmp) {
     curl_close($ch);
 
     if ($erro) {
-        return ["sucesso" => false, "erro" => "Erro cURL: " . $erro];
+        return ["sucesso" => false, "erro" => "Erro de conexão (cURL): " . $erro];
     }
 
     $json = json_decode($resposta, true);
     
+    // Se o status HTTP não for 200, algo deu errado na API deles
     if ($http_code !== 200) {
-        $msg_erro = $json['error']['message'] ?? "Erro desconhecido do Cloudinary";
+        $msg_erro = $json['error']['message'] ?? "Erro desconhecido no Cloudinary";
         return ["sucesso" => false, "erro" => "Cloudinary API [HTTP $http_code]: " . $msg_erro];
     }
 
+    // Retorna a URL segura se tudo deu certo
     return ["sucesso" => true, "url" => $json['secure_url']];
 }
 
@@ -76,17 +78,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $unidade        = $_POST['unidade_medida'] ?? "UN";
         $imagem_nome    = null;
 
-        // Upload via Cloudinary
+        // Processa o upload se houver um arquivo enviado
         if (isset($_FILES['imagem']) && $_FILES['imagem']['error'] === 0) {
             $resultado = uploadParaCloudinary($_FILES['imagem']['tmp_name']);
             if ($resultado['sucesso']) {
-                $imagem_nome = $resultado['url']; // Salva a URL HTTPS completa
+                $imagem_nome = $resultado['url']; // Grava a URL completa do Cloudinary (https://...)
             } else {
                 $mensagem = "<div class='alert error'>❌ " . htmlspecialchars($resultado['erro']) . "</div>";
             }
         }
 
-        // Só tenta gravar se não houve erro no upload da imagem (ou se não foi enviada imagem)
+        // Só executa o INSERT se o upload da imagem passou sem erros
         if (empty($mensagem)) {
             try {
                 $sql = "INSERT INTO produtos (codigo_barras, nome, preco_venda, estoque, categoria_id, aparecer_online, descricao, unidade_medida, imagem, status) 
@@ -356,7 +358,7 @@ $categorias = $pdo->query("SELECT * FROM categorias ORDER BY nome ASC")->fetchAl
                             <td>
                                 <?php if($p['imagem']): ?>
                                     <?php 
-                                        // Inteligência para renderizar: se tiver http, veio do Cloudinary. Se não, é o upload local antigo.
+                                        // Garante compatibilidade: links novos do Cloudinary (http) abrem direto, uploads antigos buscam localmente
                                         $src_imagem = (strpos($p['imagem'], 'http') === 0) ? $p['imagem'] : 'uploads/produtos/' . $p['imagem'];
                                     ?>
                                     <img src="<?= $src_imagem ?>" class="img-prod">
