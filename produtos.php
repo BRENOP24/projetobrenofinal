@@ -13,23 +13,28 @@ $mensagem = "";
 // --- FUNÇÃO DE UPLOAD ASSINADO PARA O CLOUDINARY ---
 function uploadParaCloudinary($arquivoTmp) {
     $timestamp = time();
-    
-    // 1. Montar a string de parâmetros que precisa ser assinada (em ordem alfabética)
-    // Usamos o diretório 'produtos' para organizar os arquivos no seu painel
-    $paramsToSign = "folder=produtos&timestamp=" . $timestamp;
-    
-    // 2. Gerar a assinatura SHA-1 concatenando com o seu API_SECRET
+    $folder = 'produtos';
+
+    // 1. Parâmetros em estrita ordem alfabética para a assinatura
+    $params = [
+        'folder' => $folder,
+        'timestamp' => $timestamp
+    ];
+    ksort($params);
+
+    // 2. Monta a string query para assinar
+    $paramsToSign = http_build_query($params);
     $signature = sha1($paramsToSign . CLOUDINARY_API_SECRET);
 
     $url = "https://api.cloudinary.com/v1_1/" . CLOUDINARY_CLOUD_NAME . "/image/upload";
 
-    // 3. Montar o payload do POST com o arquivo e os parâmetros de autenticação
+    // 3. Payload do POST
     $data = [
         'file'      => new CURLFile($arquivoTmp),
         'api_key'   => CLOUDINARY_API_KEY,
         'timestamp' => $timestamp,
         'signature' => $signature,
-        'folder'    => 'produtos'
+        'folder'    => $folder
     ];
 
     $ch = curl_init();
@@ -41,16 +46,21 @@ function uploadParaCloudinary($arquivoTmp) {
 
     $resposta = curl_exec($ch);
     $erro = curl_error($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
     if ($erro) {
-        return null;
+        return ["sucesso" => false, "erro" => "Erro cURL: " . $erro];
     }
 
     $json = json_decode($resposta, true);
     
-    // Retorna a URL segura gerada pelo Cloudinary
-    return $json['secure_url'] ?? null;
+    if ($http_code !== 200) {
+        $msg_erro = $json['error']['message'] ?? "Erro desconhecido do Cloudinary";
+        return ["sucesso" => false, "erro" => "Cloudinary API [HTTP $http_code]: " . $msg_erro];
+    }
+
+    return ["sucesso" => true, "url" => $json['secure_url']];
 }
 
 // --- 1. LÓGICA PARA SALVAR ---
@@ -68,29 +78,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Upload via Cloudinary
         if (isset($_FILES['imagem']) && $_FILES['imagem']['error'] === 0) {
-            $url_cloudinary = uploadParaCloudinary($_FILES['imagem']['tmp_name']);
-            if ($url_cloudinary) {
-                $imagem_nome = $url_cloudinary; // Salva a URL HTTPS completa no PostgreSQL
+            $resultado = uploadParaCloudinary($_FILES['imagem']['tmp_name']);
+            if ($resultado['sucesso']) {
+                $imagem_nome = $resultado['url']; // Salva a URL HTTPS completa
             } else {
-                $mensagem = "<div class='alert error'>❌ Erro ao enviar a imagem para o Cloudinary. Verifique as credenciais.</div>";
+                $mensagem = "<div class='alert error'>❌ " . htmlspecialchars($resultado['erro']) . "</div>";
             }
         }
 
-        try {
-            $sql = "INSERT INTO produtos (codigo_barras, nome, preco_venda, estoque, categoria_id, aparecer_online, descricao, unidade_medida, imagem, status) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Ativo')";
-            $stmt = $pdo->prepare($sql);
-            if ($stmt->execute([$codigo_barras, $nome, $preco, $estoque, $categoria, $online, $descricao, $unidade, $imagem_nome])) {
-                
-                if (function_exists('registrarLog')) {
-                    $detalhes = "Cadastrou o produto: {$nome} | Cód: {$codigo_barras} | Estoque Inicial: {$estoque} {$unidade} | Preço: R$ {$preco}";
-                    registrarLog($pdo, 'INSERCAO', 'produtos', $detalhes);
-                }
+        // Só tenta gravar se não houve erro no upload da imagem (ou se não foi enviada imagem)
+        if (empty($mensagem)) {
+            try {
+                $sql = "INSERT INTO produtos (codigo_barras, nome, preco_venda, estoque, categoria_id, aparecer_online, descricao, unidade_medida, imagem, status) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Ativo')";
+                $stmt = $pdo->prepare($sql);
+                if ($stmt->execute([$codigo_barras, $nome, $preco, $estoque, $categoria, $online, $descricao, $unidade, $imagem_nome])) {
+                    
+                    if (function_exists('registrarLog')) {
+                        $detalhes = "Cadastrou o produto: {$nome} | Cód: {$codigo_barras} | Estoque Inicial: {$estoque} {$unidade} | Preço: R$ {$preco}";
+                        registrarLog($pdo, 'INSERCAO', 'produtos', $detalhes);
+                    }
 
-                $mensagem = "<div class='alert success'>✅ Produto cadastrado com sucesso!</div>";
+                    $mensagem = "<div class='alert success'>✅ Produto cadastrado com sucesso!</div>";
+                }
+            } catch (PDOException $e) {
+                $mensagem = "<div class='alert error'>❌ Erro ao salvar no banco: " . $e->getMessage() . "</div>";
             }
-        } catch (PDOException $e) {
-            $mensagem = "<div class='alert error'>❌ Erro ao salvar: " . $e->getMessage() . "</div>";
         }
     }
 
@@ -342,7 +355,11 @@ $categorias = $pdo->query("SELECT * FROM categorias ORDER BY nome ASC")->fetchAl
                         <tr class="<?= $ver_inativos == 'Inativo' ? 'status-inativo-linha' : '' ?>">
                             <td>
                                 <?php if($p['imagem']): ?>
-                                    <img src="<?= $p['imagem'] ?>" class="img-prod">
+                                    <?php 
+                                        // Inteligência para renderizar: se tiver http, veio do Cloudinary. Se não, é o upload local antigo.
+                                        $src_imagem = (strpos($p['imagem'], 'http') === 0) ? $p['imagem'] : 'uploads/produtos/' . $p['imagem'];
+                                    ?>
+                                    <img src="<?= $src_imagem ?>" class="img-prod">
                                 <?php else: ?>
                                     <div class="img-prod" style="display: flex; align-items: center; justify-content: center; font-size: 9px; color: #ccc;">SEM FOTO</div>
                                 <?php endif; ?>
