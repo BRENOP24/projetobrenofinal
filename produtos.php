@@ -79,15 +79,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $imagem_nome    = null;
 
         // Processa o upload se houver um arquivo enviado
+// Processa o upload se houver um arquivo enviado
         if (isset($_FILES['imagem']) && $_FILES['imagem']['error'] === 0) {
             $resultado = uploadParaCloudinary($_FILES['imagem']['tmp_name']);
+            
+            // --- ISSO VAI PARAR O SISTEMA E MOSTRAR O COICE NA TELA ---
+            echo "<h1>Debug de Envio do Cloudinary</h1>";
+            echo "<pre>"; print_r($resultado); echo "</pre>"; 
+            exit;
+            // ---------------------------------------------------------
+
             if ($resultado['sucesso']) {
-                $imagem_nome = $resultado['url']; // Grava a URL completa do Cloudinary (https://...)
+                $imagem_nome = $resultado['url']; 
             } else {
                 $mensagem = "<div class='alert error'>❌ " . htmlspecialchars($resultado['erro']) . "</div>";
             }
+        } else {
+            // Se cair aqui, a imagem nem foi enviada pelo formulário ou veio com erro
+            echo "<h1>Erro no envio do formulário</h1>";
+            echo "<pre>"; print_r($_FILES['imagem'] ?? 'Nenhum arquivo recebido em $_FILES'); echo "</pre>";
+            exit;
         }
-
         // Só executa o INSERT se o upload da imagem passou sem erros
         if (empty($mensagem)) {
             try {
