@@ -1,4 +1,3 @@
-
 <?php
 require_once 'config/conexao.php';
 require_once 'config/funcoes.php';
@@ -71,8 +70,7 @@ $produtos = $stmtProdutos->fetchAll(PDO::FETCH_ASSOC);
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-       <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-VCJ8JQBD87"></script>
+       <script async src="https://www.googletagmanager.com/gtag/js?id=G-VCJ8JQBD87"></script>
 
     <script>
       window.dataLayer = window.dataLayer || [];
@@ -512,9 +510,12 @@ body{
         <div class="produto-card">
 
             <?php if(!empty($p['imagem'])): ?>
-
+                <?php 
+                    // AJUSTE CRUCIAL: Verifica se o link é externo (Cloudinary) ou local antigo
+                    $src_imagem = (strpos($p['imagem'], 'http') === 0) ? $p['imagem'] : 'uploads/produtos/' . $p['imagem'];
+                ?>
                 <img
-                    src="uploads/produtos/<?= htmlspecialchars($p['imagem']) ?>"
+                    src="<?= $src_imagem ?>"
                     class="produto-img"
                 >
 
@@ -572,7 +573,6 @@ body{
 
 </main>
 
-<!-- BARRA CARRINHO -->
 <div id="barra-carrinho">
 
     <button
@@ -600,7 +600,6 @@ body{
 
 </div>
 
-<!-- MODAL CHECKOUT -->
 <div id="modal-checkout" class="modal">
 
     <div class="modal-content">
