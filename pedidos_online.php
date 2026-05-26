@@ -1,6 +1,71 @@
 <?php
 require_once 'config/conexao.php';
 
+$mensagem_painel = "";
+
+// =======================================================
+// AÇÃO EM MASSA: AVANÇAR STATUS DE TODOS OS PEDIDOS ATIVOS
+// =======================================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_avancar_todos'])) {
+    try {
+        $pdo->beginTransaction();
+
+        // 1. Quem é 'Saiu para Entrega' -> Finaliza
+        $sql1 = "UPDATE pedidos_online SET status = 'Finalizado' WHERE status = 'Saiu para Entrega'";
+        $stmt1 = $pdo->prepare($sql1);
+        $stmt1->execute();
+        $total1 = $stmt1->rowCount();
+
+        // 2. Quem é 'Em Preparo' e RETIRADA -> Finaliza
+        $sql2 = "UPDATE pedidos_online SET status = 'Finalizado' WHERE status = 'Em Preparo' AND tipo_entrega = 'retirada'";
+        $stmt2 = $pdo->prepare($sql2);
+        $stmt2->execute();
+        $total2 = $stmt2->rowCount();
+
+        // 3. Quem é 'Em Preparo' e DELIVERY -> Sai para entrega
+        $sql3 = "UPDATE pedidos_online SET status = 'Saiu para Entrega' WHERE status = 'Em Preparo' AND tipo_entrega != 'retirada'";
+        $stmt3 = $pdo->prepare($sql3);
+        $stmt3->execute();
+        $total3 = $stmt3->rowCount();
+
+        // 4. Quem é 'Confirmado' -> Vai para a Cozinha
+        $sql4 = "UPDATE pedidos_online SET status = 'Em Preparo' WHERE status = 'Confirmado'";
+        $stmt4 = $pdo->prepare($sql4);
+        $stmt4->execute();
+        $total4 = $stmt4->rowCount();
+
+        // 5. Quem é 'Pendente' -> Confirma/Aceita
+        $sql5 = "UPDATE pedidos_online SET status = 'Confirmado' WHERE status = 'Pendente'";
+        $stmt5 = $pdo->prepare($sql5);
+        $stmt5->execute();
+        $total5 = $stmt5->rowCount();
+
+        $pdo->commit();
+
+        $totalAlterados = $total1 + $total2 + $total3 + $total4 + $total5;
+
+        if ($totalAlterados > 0) {
+            $mensagem_painel = "<div style='color:#155724; padding:15px; background:#d4edda; border: 1px solid #c3e6cb; border-radius:8px; margin-bottom:20px; font-weight:bold; display:flex; align-items:center; gap:10px;'>
+                                    <i class='fas fa-forward fa-lg'></i> 🚀 Sucesso! O fluxo de $totalAlterados status foi avançado no painel!
+                                 </div>";
+        } else {
+            $mensagem_painel = "<div style='color:#383d41; padding:15px; background:#e2e3e5; border: 1px solid #d6d8db; border-radius:8px; margin-bottom:20px; display:flex; align-items:center; gap:10px;'>
+                                    <i class='fas fa-info-circle fa-lg'></i> Nenhum pedido ativo para avançar no momento.
+                                 </div>";
+        }
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $mensagem_painel = "<div style='color:#721c24; padding:15px; background:#f8d7da; border: 1px solid #f5c6cb; border-radius:8px; margin-bottom:20px; font-weight:bold;'>
+                                ❌ Erro ao processar fluxo em lote: " . $e->getMessage() . "
+                            </div>";
+    }
+}
+
+// =======================================================
+// BUSCA DOS PEDIDOS ATIVOS
+// =======================================================
 try {
     
     $sql = "SELECT 
@@ -53,6 +118,11 @@ try {
         .btn-acao { border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 5px; margin-top: 10px; color: white; }
         .btn-detalhes { background: #6c757d; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
         .btn-cancelar { background: #dc3545; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+
+        /* Estilo da Barra Superior de Ação em Lote */
+        .barra-acoes-massa { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #e3e6f0; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .btn-massa { background: #007bff; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; box-shadow: 0 3px 6px rgba(0,123,255,0.15); transition: 0.2s; display: flex; align-items: center; gap: 8px; }
+        .btn-massa:hover { background: #0069d9; transform: translateY(-1px); }
     </style>
 </head>
 <body>
@@ -60,6 +130,20 @@ try {
     <div class="header">
         <h1 style="margin: 0;">🛎️ Pedidos Ativos</h1>
         <div>Atualização automática em <span id="contador">30</span>s</div>
+    </div>
+    
+    <?= $mensagem_painel ?>
+
+    <div class="barra-acoes-massa">
+        <div>
+            <h3 style="margin:0; color:#333;"><i class="fas fa-forward"></i> Controle de Fluxo Rápido</h3>
+            <p style="margin:5px 0 0 0; font-size:13px; color:#666;">Avança todos os pedidos simultaneamente para o próximo estágio (TCC Mode).</p>
+        </div>
+        <form method="POST" onsubmit="return confirm('Deseja avançar o estágio de TODOS os pedidos ativos na tela?');">
+            <button type="submit" name="btn_avancar_todos" class="btn-massa">
+                <i class="fas fa-angle-double-right"></i> Avançar Próxima Etapa Geral
+            </button>
+        </form>
     </div>
     
     <?php if(empty($pedidos)): ?>
@@ -168,49 +252,11 @@ try {
     </div>
 
     <script>
-        // Funções para o Modal
-        function verDetalhes(id) {
-            document.getElementById('modalDetalhes').style.display = 'block';
-            const conteudo = document.getElementById('conteudoItens');
-            conteudo.innerHTML = "Carregando...";
+        // Configurações iniciais de Áudio e Contagem
+        const somAlerta = document.getElementById('audioAlerta');
+        let tempo = 30;
 
-            fetch('buscar_itens.php?id=' + id)
-                .then(res => res.json())
-                .then(itens => {
-                    if(itens.erro) {
-                        conteudo.innerHTML = `<span style='color:red;'>${itens.erro}</span>`;
-                        return;
-                    }
-                    if(itens.length === 0) {
-                        conteudo.innerHTML = "Nenhum item encontrado.";
-                        return;
-                    }
-
-                    let html = '<ul style="list-style:none; padding:0;">';
-                    itens.forEach(item => {
-                        // Trata o nome do produto caso você tenha feito JOIN na busca
-                        let nomeProduto = item.produto_nome || item.nome_produto || "Produto ID " + item.produto_id;
-                        let subtotal = parseFloat(item.preco_unitario) * parseInt(item.quantidade);
-
-                        html += `<li style="padding:10px 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between;">
-                                    <span><b>${item.quantidade}x</b> ${nomeProduto}</span>
-                                    <span>R$ ${subtotal.toFixed(2).replace('.', ',')}</span>
-                                 </li>`;
-                    });
-                    html += '</ul>';
-                    conteudo.innerHTML = html;
-                })
-                .catch(err => {
-                    console.error(err);
-                    conteudo.innerHTML = "Erro ao comunicar com o servidor.";
-                });
-        }
-
-        function fecharModal() {
-            document.getElementById('modalDetalhes').style.display = 'none';
-        }
-
-        // Função de Atualização de Status
+        // Função de Atualização de Status Individual
         function atualizarStatus(id, novoStatus) {
             if(!confirm("Mudar status do pedido #" + id + " para '" + novoStatus + "'?")) return;
             
@@ -236,120 +282,79 @@ try {
             });
         }
 
-        // Relógio de Atualização Automática
-        let tempo = 30;
+        // Verificação de novos pedidos (Som de Alerta)
+        function verificarNovosPedidos() {
+            fetch('checar_total_pedidos.php')
+                .then(res => res.json())
+                .then(data => {
+                    if(data.total_pendentes > 0) {
+                        if (somAlerta) {
+                            somAlerta.loop = true;
+                            somAlerta.play().catch(e => console.log("Clique na página para ativar o som."));
+                        }
+                    } else {
+                        if (somAlerta) {
+                            somAlerta.pause();
+                            somAlerta.currentTime = 0;
+                        }
+                    }
+                })
+                .catch(err => console.error("Erro ao checar:", err));
+        }
+
+        // Funções do Modal de Detalhes
+        function verDetalhes(id) {
+            document.getElementById('modalDetalhes').style.display = 'block';
+            const conteudo = document.getElementById('conteudoItens');
+            conteudo.innerHTML = "Carregando...";
+
+            fetch('buscar_itens.php?id=' + id)
+                .then(res => res.json())
+                .then(itens => {
+                    if(itens.erro) {
+                        conteudo.innerHTML = `<span style='color:red;'>${itens.erro}</span>`;
+                        return;
+                    }
+                    if(itens.length === 0) {
+                        conteudo.innerHTML = "Nenhum item encontrado.";
+                        return;
+                    }
+
+                    let html = '<ul style="list-style:none; padding:0;">';
+                    itens.forEach(item => {
+                        let nomeProduto = item.produto_nome || item.nome_produto || "Produto ID " + item.produto_id;
+                        let subtotal = parseFloat(item.preco_unitario) * parseInt(item.quantidade);
+
+                        html += `<li style="padding:10px 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between;">
+                                    <span><b>${item.quantidade}x</b> ${nomeProduto}</span>
+                                    <span>R$ ${subtotal.toFixed(2).replace('.', ',')}</span>
+                                 </li>`;
+                    });
+                    html += '</ul>';
+                    conteudo.innerHTML = html;
+                })
+                .catch(err => {
+                    console.error(err);
+                    conteudo.innerHTML = "Erro ao comunicar com o servidor.";
+                });
+        }
+
+        function fecharModal() {
+            document.getElementById('modalDetalhes').style.none = 'none';
+            document.getElementById('modalDetalhes').style.display = 'none';
+        }
+
+        // --- INICIALIZAÇÃO DOS INTERVALOS ---
+        setInterval(verificarNovosPedidos, 5000);
+
         setInterval(() => {
             tempo--;
-            document.getElementById('contador').innerText = tempo;
+            const elementoContador = document.getElementById('contador');
+            if(elementoContador) {
+                elementoContador.innerText = tempo;
+            }
             if(tempo <= 0) location.reload();
         }, 1000);
     </script>
-
-
-
-
-
-<script>
-    // 1. Configurações iniciais de Áudio e Contagem
-    const somAlerta = document.getElementById('audioAlerta');
-    let totalPedidosAntigo = <?= count($pedidos) ?>;
-
-    // 2. Função de Atualização de Status (A que você já tinha)
-    function atualizarStatus(id, novoStatus) {
-        if(!confirm("Mudar status do pedido #" + id + " para '" + novoStatus + "'?")) return;
-        
-        const formData = new FormData();
-        formData.append('id', id);
-        formData.append('status', novoStatus);
-
-        fetch('atualizar_status.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(res => res.json())
-        .then(res => {
-            if(res.sucesso) {
-                location.reload();
-            } else {
-                alert("Erro ao atualizar: " + (res.erro || "Desconhecido"));
-            }
-        })
-        .catch(err => {
-            console.error(err);
-            alert("Erro de comunicação.");
-        });
-    }
-
-    // 3. Verificação de novos pedidos (Som de Alerta)
-function verificarNovosPedidos() {
-    fetch('checar_total_pedidos.php')
-        .then(res => res.json())
-        .then(data => {
-            // Se houver 1 ou mais pedidos pendentes, o som toca
-            if(data.total_pendentes > 0) {
-                if (somAlerta) {
-                    somAlerta.loop = true; // Faz o som repetir
-                    somAlerta.play().catch(e => console.log("Clique na página para ativar o som."));
-                }
-            } else {
-                // Se não houver nenhum pendente, para o som
-                if (somAlerta) {
-                    somAlerta.pause();
-                    somAlerta.currentTime = 0; // Volta o som para o início
-                }
-            }
-        })
-        .catch(err => console.error("Erro ao checar:", err));
-}
-
-
-    // 4. Funções do Modal de Detalhes (Mantidas como estavam)
-    function verDetalhes(id) {
-        document.getElementById('modalDetalhes').style.display = 'block';
-        const conteudo = document.getElementById('conteudoItens');
-        conteudo.innerHTML = "Carregando...";
-
-        fetch('buscar_itens.php?id=' + id)
-            .then(res => res.json())
-            .then(itens => {
-                if(itens.erro) {
-                    conteudo.innerHTML = `<span style='color:red;'>${itens.erro}</span>`;
-                    return;
-                }
-                let html = '<ul style="list-style:none; padding:0;">';
-                itens.forEach(item => {
-                    let nomeProduto = item.produto_nome || item.nome_produto || "Produto ID " + item.produto_id;
-                    let subtotal = parseFloat(item.preco_unitario) * parseInt(item.quantidade);
-                    html += `<li style="padding:10px 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between;">
-                                <span><b>${item.quantidade}x</b> ${nomeProduto}</span>
-                                <span>R$ ${subtotal.toFixed(2).replace('.', ',')}</span>
-                             </li>`;
-                });
-                html += '</ul>';
-                conteudo.innerHTML = html;
-            });
-    }
-
-    function fecharModal() {
-        document.getElementById('modalDetalhes').style.display = 'none';
-    }
-
-    // --- INICIALIZAÇÃO DOS INTERVALOS ---
-
-    // Checa se há novos pedidos a cada 30 segundos
-    setInterval(verificarNovosPedidos, 5000);
-
-    // Contador regressivo para atualizar a página a cada 30 segundos
-    setInterval(() => {
-        tempo--;
-        const elementoContador = document.getElementById('contador');
-        if(elementoContador) {
-            elementoContador.innerText = tempo;
-        }
-        if(tempo <= 0) location.reload();
-    }, 1000);
-</script>
-
-
 </body>
 </html>
