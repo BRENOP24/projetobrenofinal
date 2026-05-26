@@ -8,7 +8,7 @@ require_once 'config/sessao.php';
 require_once 'config/conexao.php';
 require_once 'config/funcoes.php';
 
-// Suas credenciais do Cloudinary configuradas e validadas
+// Credenciais configuradas
 define('CLOUDINARY_CLOUD_NAME', 'dvlh11o6w');
 define('CLOUDINARY_API_KEY', '591916441776592');
 define('CLOUDINARY_API_SECRET', 'SyY1qSVlTc9C1egsVUlfMACCU_g');
@@ -35,7 +35,7 @@ function uploadParaCloudinary($arquivoTmp) {
 
     // 3. Payload do POST
     $data = [
-        'file'      => new CURLFile($arquivoTmp),
+        'file'      => new CURLFile($arquivoTmp), // Corrigido para a variável correta da função
         'api_key'   => CLOUDINARY_API_KEY,
         'timestamp' => $timestamp,
         'signature' => $signature,
@@ -48,7 +48,7 @@ function uploadParaCloudinary($arquivoTmp) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0); // Ajuste crucial para ambiente Linux/Render
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0); 
 
     $resposta = curl_exec($ch);
     $erro = curl_error($ch);
@@ -61,13 +61,11 @@ function uploadParaCloudinary($arquivoTmp) {
 
     $json = json_decode($resposta, true);
     
-    // Se o status HTTP não for 200, algo deu errado na API deles
     if ($http_code !== 200) {
         $msg_erro = $json['error']['message'] ?? "Erro desconhecido no Cloudinary";
         return ["sucesso" => false, "erro" => "Cloudinary API [HTTP $http_code]: " . $msg_erro];
     }
 
-    // Retorna a URL segura se tudo deu certo
     return ["sucesso" => true, "url" => $json['secure_url']];
 }
 
@@ -88,24 +86,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (isset($_FILES['imagem']) && $_FILES['imagem']['error'] === 0) {
             $resultado = uploadParaCloudinary($_FILES['imagem']['tmp_name']);
             
-            // --- ISSO VAI PARAR O SISTEMA E MOSTRAR O COICE NA TELA ---
-            echo "<h1>Debug de Envio do Cloudinary</h1>";
-            echo "<pre>"; print_r($resultado); echo "</pre>"; 
-            exit;
+            // --- TRAVA DE DEBUG COMENTADA PARA PERMITIR GRAVAÇÃO ---
+            // echo "<h1>Debug de Envio do Cloudinary</h1>";
+            // echo "<pre>"; print_r($resultado); echo "</pre>"; 
+            // exit;
             // ---------------------------------------------------------
 
             if ($resultado['sucesso']) {
-                $imagem_nome = $resultado['url']; 
+                $imagem_nome = $resultado['url']; // Guarda a URL segura (https) gerada
             } else {
                 $mensagem = "<div class='alert error'>❌ " . htmlspecialchars($resultado['erro']) . "</div>";
             }
         } else {
-            // Se cair aqui, a imagem nem foi enviada pelo formulário ou veio com erro
-            echo "<h1>Erro no envio do formulário</h1>";
-            echo "<pre>"; print_r($_FILES['imagem'] ?? 'Nenhum arquivo recebido em $_FILES'); echo "</pre>";
-            exit;
+            // Se o usuário não enviou imagem no cadastro, define uma padrão ou deixa null
+            $imagem_nome = "https://res.cloudinary.com/dvlh11o6w/image/upload/v1/samples/ecommerce/shoes.jpg";
         }
-        // Só executa o INSERT se o upload da imagem passou sem erros
+
+        // Só executa o INSERT se o upload passou sem erros ou se usou a imagem padrão
         if (empty($mensagem)) {
             try {
                 $sql = "INSERT INTO produtos (codigo_barras, nome, preco_venda, estoque, categoria_id, aparecer_online, descricao, unidade_medida, imagem, status) 
@@ -125,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
-
+  
     if (isset($_POST['btn_inativar'])) {
         $id_inativar = $_POST['id_produto'];
         
