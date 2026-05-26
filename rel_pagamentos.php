@@ -13,7 +13,7 @@ $considerar_online = $_GET['online']  ?? 'sim';
 $params = [$data_inicial . ' 00:00:00', $data_final . ' 23:59:59'];
 
 // ===============================
-// 🔥 PARTE LOCAL (CORRIGIDA)
+// 🔥 PARTE LOCAL (Lendo tipo_venda)
 // ===============================
 $sql = "SELECT 
             p.id, 
@@ -21,12 +21,17 @@ $sql = "SELECT
             p.valor_total, 
             fp.descricao as forma_nome, 
             c.nome as nome_cliente, 
-            'Local' as origem
+            CASE 
+                WHEN p.tipo_venda ILIKE 'balcao' THEN 'Presencial (Balcão)'
+                WHEN p.tipo_venda ILIKE 'delivery' THEN 'Presencial (Delivery Manual)'
+                WHEN p.tipo_venda ILIKE 'local' THEN 'Presencial (Consumo Local)'
+                ELSE 'Presencial'
+            END as origem
         FROM pedidos p
         JOIN formas_pagamento fp ON p.forma_pagamento_id = fp.id
         LEFT JOIN clientes c ON p.cliente_id = c.id
         WHERE p.criado_em BETWEEN ? AND ? 
-        AND (p.status = 'finalizado' OR p.situacao = 'finalizado')";;
+        AND (p.status ILIKE 'finalizado' OR p.situacao ILIKE 'finalizado')";
 
 // filtro forma pagamento
 if ($forma_id) {
@@ -35,7 +40,7 @@ if ($forma_id) {
 }
 
 // ===============================
-// 🔥 PARTE ONLINE
+// 🔥 PARTE ONLINE (Lendo tipo_entrega)
 // ===============================
 if ($considerar_online === 'sim') {
 
@@ -46,12 +51,15 @@ if ($considerar_online === 'sim') {
                   po.valor_total, 
                   fp2.descricao as forma_nome, 
                   co.nome as nome_cliente, 
-                  'Online' as origem
+                  CASE 
+                     WHEN po.tipo_entrega ILIKE 'retirada' THEN 'Online (Retirada)'
+                     ELSE 'Online (Entrega)'
+                  END as origem
               FROM pedidos_online po
               JOIN formas_pagamento fp2 ON po.forma_pagamento_id = fp2.id
               LEFT JOIN clientes_online co ON po.cliente_id = co.id
               WHERE po.data_pedido BETWEEN ? AND ? 
-              AND po.status = 'finalizado'";
+              AND po.status ILIKE 'finalizado'";
 
     $params[] = $data_inicial . ' 00:00:00';
     $params[] = $data_final . ' 23:59:59';
@@ -64,9 +72,13 @@ if ($considerar_online === 'sim') {
 
 $sql .= " ORDER BY data_pedido DESC";
 
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$vendas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+try {
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $vendas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    die("Erro na consulta do relatório: " . $e->getMessage());
+}
 
 // ===============================
 // 3. TOTAIS
@@ -76,7 +88,7 @@ $resumo = [];
 
 foreach($vendas as $v) {
     $total_geral += (float)$v['valor_total'];
-    $nome_f = $v['forma_nome'];
+    $nome_f = $v['forma_nome'] ?: 'Não Informado';
     $resumo[$nome_f] = ($resumo[$nome_f] ?? 0) + (float)$v['valor_total'];
 }
 
@@ -118,9 +130,12 @@ $todas_formas = $pdo->query("
         th { background: #f8fafc; padding: 15px; text-align: left; font-size: 12px; color: #64748b; border-bottom: 2px solid #edf2f7; }
         td { padding: 15px; border-bottom: 1px solid #edf2f7; font-size: 14px; }
         
-        .badge-origem { padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: bold; }
-        .origem-local { background: #ebf8ff; color: #3182ce; }
-        .origem-online { background: #fefcbf; color: #b7791f; }
+        .badge-origem { padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: bold; display: inline-block; }
+        .origem-balcao { background: #ebf8ff; color: #3182ce; }
+        .origem-delivery-manual { background: #edf2f7; color: #4a5568; }
+        .origem-local { background: #e2e8f0; color: #1a202c; }
+        .origem-online-entrega { background: #fefcbf; color: #b7791f; }
+        .origem-online-retirada { background: #e6fffa; color: #319795; }
         
         .right { text-align: right; }
         @media print { .filtros, .btn-voltar { display: none; } }
@@ -168,7 +183,7 @@ $todas_formas = $pdo->query("
     <div class="resumo-grid">
         <?php foreach($resumo as $nome => $valor): ?>
             <div class="card-resumo">
-                <h4><?= $nome ?></h4>
+                <h4><?= htmlspecialchars($nome) ?></h4>
                 <p>R$ <?= number_format($valor, 2, ',', '.') ?></p>
             </div>
         <?php endforeach; ?>
@@ -182,7 +197,7 @@ $todas_formas = $pdo->query("
         <thead>
             <tr>
                 <th>Data/Hora</th>
-                <th>Origem</th>
+                <th>Origem / Tipo</th>
                 <th>Pedido</th>
                 <th>Cliente</th>
                 <th>Forma de Pagamento</th>
@@ -194,13 +209,20 @@ $todas_formas = $pdo->query("
             <tr>
                 <td style="color: #718096;"><?= date('d/m/Y H:i', strtotime($v['data_pedido'])) ?></td>
                 <td>
-                    <span class="badge-origem <?= $v['origem'] == 'Online' ? 'origem-online' : 'origem-local' ?>">
+                    <?php 
+                        $classe_badge = 'origem-balcao';
+                        if ($v['origem'] == 'Presencial (Delivery Manual)') $classe_badge = 'origem-delivery-manual';
+                        if ($v['origem'] == 'Presencial (Consumo Local)') $classe_badge = 'origem-local';
+                        if ($v['origem'] == 'Online (Entrega)') $classe_badge = 'origem-online-entrega';
+                        if ($v['origem'] == 'Online (Retirada)') $classe_badge = 'origem-online-retirada';
+                    ?>
+                    <span class="badge-origem <?= $classe_badge ?>">
                         <?= strtoupper($v['origem']) ?>
                     </span>
                 </td>
                 <td style="font-weight: bold;">#<?= $v['id'] ?></td>
                 <td><?= htmlspecialchars($v['nome_cliente'] ?: 'Consumidor Final') ?></td>
-                <td><span style="color: #3182ce; font-weight: 500;"><?= $v['forma_nome'] ?></span></td>
+                <td><span style="color: #3182ce; font-weight: 500;"><?= htmlspecialchars($v['forma_nome']) ?></span></td>
                 <td class="right" style="font-weight: bold;">R$ <?= number_format($v['valor_total'], 2, ',', '.') ?></td>
             </tr>
             <?php endforeach; ?>
