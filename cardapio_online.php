@@ -49,7 +49,7 @@ $dias_semana_nome = [
 ];
 
 /* ===============================
-   3. PRODUTOS
+   3. PRODUTOS (Mantendo a estrutura)
 ================================ */
 $sqlProdutos = "
     SELECT
@@ -511,7 +511,7 @@ body{
 
             <?php if(!empty($p['imagem'])): ?>
                 <?php 
-                    // AJUSTE CRUCIAL: Verifica se o link é externo (Cloudinary) ou local antigo
+                    // Regra de imagem mantida com segurança
                     $src_imagem = (strpos($p['imagem'], 'http') === 0) ? $p['imagem'] : 'uploads/produtos/' . $p['imagem'];
                 ?>
                 <img
@@ -547,15 +547,20 @@ body{
 
                 <div class="produto-rodape">
 
+                    <?php 
+                        // INTEGRAÇÃO: Se tiver preço online definido (>0), usa ele. Caso contrário, usa o de venda normal.
+                        $preco_atual = (!empty($p['preco_online']) && $p['preco_online'] > 0) ? $p['preco_online'] : $p['preco_venda'];
+                    ?>
+
                     <span class="produto-preco">
-                        R$ <?= number_format($p['preco_venda'], 2, ',', '.') ?>
+                        R$ <?= number_format($preco_atual, 2, ',', '.') ?>
                     </span>
 
                     <button
                         class="btn-add btn-adicionar-produto"
                         data-id="<?= $p['id'] ?>"
                         data-nome="<?= htmlspecialchars($p['nome']) ?>"
-                        data-preco="<?= $p['preco_venda'] ?>"
+                        data-preco="<?= $preco_atual ?>" 
                         <?= !$loja_aberta ? 'disabled' : '' ?>
                     >
                         Adicionar
