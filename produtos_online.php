@@ -15,42 +15,44 @@ $busca_categoria = $_GET['busca_categoria'] ?? '';
 $condicaoFiltro = "";
 $params = [];
 
-// Filtro por status de visibilidade
 if ($filtro === 'visiveis') {
     $condicaoFiltro .= " AND p.aparecer_online = 'S' ";
 } elseif ($filtro === 'ocultos') {
     $condicaoFiltro .= " AND p.aparecer_online = 'N' ";
 }
 
-// Filtro por nome do produto
 if (!empty($busca_nome)) {
-    $condicaoFiltro .= " AND p.nome ILIKE :busca_nome "; // Usado ILIKE para PostgreSQL (ou LIKE se for MySQL)
+    $condicaoFiltro .= " AND p.nome ILIKE :busca_nome "; 
     $params[':busca_nome'] = "%" . $busca_nome . "%";
 }
 
-// Filtro por ID da categoria
 if (!empty($busca_categoria)) {
     $condicaoFiltro .= " AND p.categoria_id = :busca_categoria ";
     $params[':busca_categoria'] = (int)$busca_categoria;
 }
 
 /* ===============================
-   ATUALIZAÇÃO
+   ATUALIZAÇÃO (Preço Exclusivo Online)
 ================================ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_atualizar_online'])) {
     $id = $_POST['id_produto'];
     $status_online = $_POST['aparecer_online'];
     $obs = trim($_POST['obs_online']);
+    
+    // Tratamento do preço online vindo do formulário
+    $preco_online = str_replace(',', '.', $_POST['preco_online']); 
+    $preco_online = !empty($preco_online) ? floatval($preco_online) : 0.00;
 
     try {
+        // ATENÇÃO: Alterado de preco_venda para preco_online para NÃO mexer no preço físico!
         $sql = "UPDATE produtos 
-                SET aparecer_online = ?, obs_online = ? 
+                SET aparecer_online = ?, obs_online = ?, preco_online = ? 
                 WHERE id = ?";
         $stmt = $pdo->prepare($sql);
         
-        if ($stmt->execute([$status_online, $obs, $id])) {
+        if ($stmt->execute([$status_online, $obs, $preco_online, $id])) {
             $mensagem = "<div style='color:green; padding:10px; background:#d4edda; border-radius:5px; margin-bottom:15px;'>
-                            Produto atualizado com sucesso!
+                            Produto atualizado com sucesso no cardápio online!
                          </div>";
         }
     } catch (PDOException $e) {
@@ -61,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_atualizar_online'
 }
 
 /* ===============================
-   BUSCA LISTA DE CATEGORIAS (Para o Filtro Dropdown)
+   BUSCA LISTA DE CATEGORIAS
 ================================ */
 try {
     $sql_cat = "SELECT id, nome FROM categorias ORDER BY nome ASC";
@@ -76,7 +78,7 @@ try {
 ================================ */
 try {
     $sql = "SELECT p.*, 
-                   COALESCE(c.nome, 'Sem Categoria') as nome_categoria
+                    COALESCE(c.nome, 'Sem Categoria') as nome_categoria
             FROM produtos p 
             LEFT JOIN categorias c ON p.categoria_id = c.id 
             WHERE p.status = 'Ativo'
@@ -107,8 +109,9 @@ try {
     margin-bottom: 10px;
     border-radius: 8px;
     display: grid;
-    grid-template-columns: 80px 1fr 200px 150px;
-    gap: 20px;
+    /* Grid reajustado para acomodar o preço físico (exibição) e preço online (input) */
+    grid-template-columns: 80px 1.2fr 100px 110px 1.5fr 140px;
+    gap: 15px;
     align-items: center;
 }
 .categoria-header {
@@ -151,14 +154,14 @@ try {
 </head>
 
 <body>
-<div class="container" style="max-width:1100px; margin:0 auto; padding:20px;">
+<div class="container" style="max-width:1200px; margin:0 auto; padding:20px;">
 
 <div style="display:flex; justify-content:space-between; align-items:center;">
-    <h2>🌐 Controle de Visibilidade no Cardápio</h2>
+    <h2>🌐 Controle de Visibilidade e Preço Online</h2>
     <a href="dashboard.php" style="text-decoration:none; font-weight:bold;">⬅ Voltar</a>
 </div>
 
-<p>Gerencie quais produtos aparecem no cardápio online.</p>
+<p>Defina preços e visibilidade exclusivos para o ambiente online sem afetar o preço físico do estabelecimento.</p>
 
 <?= $mensagem ?>
 
@@ -227,50 +230,69 @@ try {
 
     <div class="card-produto">
 
-    <div>
-    <?php if($p['imagem']): ?>
-    <img src="uploads/produtos/<?= htmlspecialchars($p['imagem']) ?>" 
-         width="70" height="70" 
-         style="object-fit:cover; border-radius:5px;">
-    <?php else: ?>
-    <div style="width:70px; height:70px; background:#eee; text-align:center; line-height:70px; font-size:10px;">
-    Sem foto
-    </div>
-    <?php endif; ?>
-    </div>
+        <div>
+        <?php if(!empty($p['imagem'])): ?>
+            <?php 
+               $caminho_imagem = (strpos($p['imagem'], 'http') === 0) ? $p['imagem'] : "uploads/produtos/" . $p['imagem']; 
+            ?>
+            <img src="<?= htmlspecialchars($caminho_imagem) ?>" 
+                 width="70" height="70" 
+                 style="object-fit:cover; border-radius:5px;"
+                 onerror="this.onerror=null; this.src='img/sem-foto.png';">
+        <?php else: ?>
+            <div style="width:70px; height:70px; background:#eee; text-align:center; line-height:70px; font-size:10px; border-radius:5px; color:#666;">
+            Sem foto
+            </div>
+        <?php endif; ?>
+        </div>
 
-    <div>
-    <strong><?= htmlspecialchars($p['nome']) ?></strong><br>
-    <span style="color:#28a745;">
-    R$ <?= number_format($p['preco_venda'], 2, ',', '.') ?>
-    </span>
-    </div>
+        <div>
+            <strong><?= htmlspecialchars($p['nome']) ?></strong>
+        </div>
 
-    <form method="POST" style="display: contents;">
-    <input type="hidden" name="id_produto" value="<?= $p['id'] ?>">
+        <div>
+            <span style="font-size:11px; color:#6c757d; display:block;">Preço Físico:</span>
+            <span style="font-weight:bold; color:#333;">R$ <?= number_format($p['preco_venda'], 2, ',', '.') ?></span>
+        </div>
 
-    <div>
-    <label style="font-size:12px;">Obs. no Cardápio:</label>
-    <input type="text" 
-           name="obs_online" 
-           value="<?= htmlspecialchars($p['obs_online'] ?? '') ?>" 
-           style="width:100%; padding:5px;">
-    </div>
+        <form method="POST" style="display: contents;">
+        <input type="hidden" name="id_produto" value="<?= $p['id'] ?>">
 
-    <div style="text-align:right;">
-    <select name="aparecer_online" 
-            style="padding:5px; margin-bottom:5px; width:100%;">
-    <option value="S" <?= $p['aparecer_online'] == 'S' ? 'selected' : '' ?>>✅ Visível</option>
-    <option value="N" <?= $p['aparecer_online'] == 'N' ? 'selected' : '' ?>>❌ Oculto</option>
-    </select>
+        <div>
+            <label style="font-size:11px; font-weight: bold; display:block; margin-bottom:3px; color:#007bff;">Preço Online:</label>
+            <?php 
+                $valor_online_inicial = (!empty($p['preco_online']) && $p['preco_online'] > 0) ? $p['preco_online'] : $p['preco_venda'];
+            ?>
+            <input type="number" 
+                   name="preco_online" 
+                   value="<?= $valor_online_inicial ?>" 
+                   step="0.01" 
+                   min="0.00"
+                   style="width:100%; padding:5px; border:1px solid #007bff; border-radius:4px; font-weight:bold; color:#007bff; background:#f4f9ff;">
+        </div>
 
-    <button type="submit" 
-            name="btn_atualizar_online"
-            style="background:#007bff; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; width:100%;">
-    Atualizar
-    </button>
-    </div>
-    </form>
+        <div>
+            <label style="font-size:11px; display:block; margin-bottom:3px;">Obs. no Cardápio:</label>
+            <input type="text" 
+                   name="obs_online" 
+                   value="<?= htmlspecialchars($p['obs_online'] ?? '') ?>" 
+                   style="width:100%; padding:5px; border:1px solid #cbd5e1; border-radius:4px;">
+        </div>
+
+        <div style="text-align:right;">
+            <select name="aparecer_online" 
+                    style="padding:5px; margin-bottom:5px; width:100%; border:1px solid #cbd5e1; border-radius:4px;">
+                <option value="S" <?= $p['aparecer_online'] == 'S' ? 'selected' : '' ?>>✅ Visível</option>
+                <option value="N" <?= $p['aparecer_online'] == 'N' ? 'selected' : '' ?>>❌ Oculto</option>
+            </select>
+
+            <button type="submit" 
+                    name="btn_atualizar_online"
+                    style="background:#007bff; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; width:100%; font-weight:bold;">
+                Atualizar
+            </button>
+        </div>
+        </form>
 
     </div>
     <?php endforeach; ?>
