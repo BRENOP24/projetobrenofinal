@@ -12,11 +12,15 @@ $plano_conta_filtro = $_GET['plano_conta'] ?? '';
 $data_inicio = "$ano-$mes-01";
 $data_fim = date("Y-m-t", strtotime($data_inicio));
 
+// Datas completas para filtros de data e hora em pedidos
+$inicio_timestamp = $data_inicio . ' 00:00:00';
+$fim_timestamp    = $data_fim . ' 23:59:59';
+
 /* ==========================================================================
    1. BUSCA LISTA DE PLANO DE CONTAS (Organizado por Tipo para o Filtro)
    ========================================================================== */
 try {
-    $sql_plano = "SELECT id, descricao, tipo FROM plano_contas ORDER BY tipo DESC, descricao ASC";
+    $sql_plano = "SELECT id, descricao, tipo FROM plano_contas WHERE status = 'ativo' ORDER BY tipo DESC, descricao ASC";
     $stmt_plano = $pdo->query($sql_plano);
     $lista_planos = $stmt_plano->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
@@ -31,9 +35,9 @@ $condicaoReceitaPresencial = "";
 $condicaoReceitaOnline = "";
 
 $params = [
-    ':inicio'  => $data_inicio, ':fim'  => $data_fim,
-    ':inicio2' => $data_inicio, ':fim2' => $data_fim,
-    ':inicio3' => $data_inicio, ':fim3' => $data_fim
+    ':inicio'  => $inicio_timestamp, ':fim'  => $fim_timestamp,
+    ':inicio2' => $inicio_timestamp, ':fim2' => $fim_timestamp,
+    ':inicio3' => $data_inicio,      ':fim3' => $data_fim
 ];
 
 if (!empty($plano_conta_filtro)) {
@@ -46,67 +50,120 @@ if (!empty($plano_conta_filtro)) {
 }
 
 /* ==========================================================================
-   3. CONSULTA DA DRE
+   3. CONSULTA DA DRE (CORRIGIDA COM MAPEAMENTO DE CANAIS E TIPOS)
    ========================================================================== */
 if ($visao == 'analitico') {
     $sql = "
     WITH Receitas AS (
-        SELECT p.data_pedido as data_mov, 'Presencial - ' || pc.descricao as descricao, p.valor_total as valor, 'RECEITA' as tipo_grupo 
+        SELECT 
+            p.criado_em as data_mov, 
+            CASE 
+                WHEN p.tipo_venda ILIKE 'balcao' THEN 'Presencial (Balcão) - '
+                WHEN p.tipo_venda ILIKE 'delivery' THEN 'Presencial (Delivery Manual) - '
+                WHEN p.tipo_venda ILIKE 'local' THEN 'Presencial (Consumo Local) - '
+                ELSE 'Presencial - '
+            END || pc.descricao as descricao, 
+            p.valor_total as valor, 
+            'RECEITA' as tipo_grupo 
         FROM pedidos p
         INNER JOIN plano_contas pc ON p.forma_pagamento_id = pc.id
-        WHERE p.situacao = 'finalizado' AND p.data_pedido BETWEEN :inicio AND :fim
-        $condicaoReceitaPresencial
+        WHERE (p.status ILIKE 'finalizado' OR p.situacao ILIKE 'finalizado') 
+          AND p.criado_em BETWEEN :inicio AND :fim
+          AND pc.tipo = 'receita'
+          $condicaoReceitaPresencial
         
         UNION ALL
         
-        SELECT po.data_pedido as data_mov, 'Online - ' || pc.descricao as descricao, po.valor_total as valor, 'RECEITA' as tipo_grupo 
+        SELECT 
+            po.data_pedido as data_mov, 
+            CASE 
+                WHEN po.tipo_entrega ILIKE 'retirada' THEN 'Online (Retirada) - '
+                ELSE 'Online (Entrega) - '
+            END || pc.descricao as descricao, 
+            po.valor_total as valor, 
+            'RECEITA' as tipo_grupo 
         FROM pedidos_online po
         INNER JOIN plano_contas pc ON po.forma_pagamento_id = pc.id
-        WHERE po.status = 'Finalizado' AND po.data_pedido BETWEEN :inicio2 AND :fim2
-        $condicaoReceitaOnline
+        WHERE po.status ILIKE 'finalizado' 
+          AND po.data_pedido BETWEEN :inicio2 AND :fim2
+          AND pc.tipo = 'receita'
+          $condicaoReceitaOnline
     ),
     Despesas AS (
-        SELECT cp.data_pagamento as data_mov, pc.descricao || ' (' || cp.descricao || ')' as descricao, cp.valor_total as valor, 'DESPAN' as tipo_grupo 
+        SELECT 
+            cp.data_pagamento as data_mov, 
+            pc.descricao || ' (' || cp.descricao || ')' as descricao, 
+            cp.valor_total as valor, 
+            'DESPESA' as tipo_grupo 
         FROM contas_pagar cp 
         JOIN plano_contas pc ON cp.id_plano_conta = pc.id
-        WHERE cp.status = 'Pago' AND cp.data_pagamento BETWEEN :inicio3 AND :fim3
-        $condicaoDespesa
+        WHERE cp.status = 'Pago' 
+          AND cp.data_pagamento BETWEEN :inicio3 AND :fim3
+          AND pc.tipo = 'despesa'
+          $condicaoDespesa
     )
-    SELECT data_mov, descricao, valor, CASE WHEN tipo_grupo = 'DESPAN' THEN 'DESPESA' ELSE 'RECEITA' END as tipo_grupo 
-    FROM Receitas 
+    SELECT data_mov, descricao, valor, tipo_grupo FROM Receitas 
     UNION ALL 
-    SELECT data_mov, descricao, valor, CASE WHEN tipo_grupo = 'DESPAN' THEN 'DESPESA' ELSE 'RECEITA' END as tipo_grupo 
-    FROM Despesas 
+    SELECT data_mov, descricao, valor, tipo_grupo FROM Despesas 
     ORDER BY tipo_grupo DESC, data_mov ASC";
 
 } else {
     $sql = "
     WITH Receitas AS (
-        SELECT NULL as data_mov, 'Venda Presencial (' || pc.descricao || ')' as descricao, SUM(p.valor_total) as valor, 'RECEITA' as tipo_grupo
+        SELECT 
+            NULL as data_mov, 
+            CASE 
+                WHEN p.tipo_venda ILIKE 'balcao' THEN 'Venda Presencial Balcão ('
+                WHEN p.tipo_venda ILIKE 'delivery' THEN 'Venda Presencial Delivery ('
+                WHEN p.tipo_venda ILIKE 'local' THEN 'Venda Presencial Local ('
+                ELSE 'Venda Presencial ('
+            END || pc.descricao || ')' as descricao, 
+            SUM(p.valor_total) as valor, 
+            'RECEITA' as tipo_grupo
         FROM pedidos p
         INNER JOIN plano_contas pc ON p.forma_pagamento_id = pc.id
-        WHERE p.situacao = 'finalizado' AND p.data_pedido BETWEEN :inicio AND :fim 
-        $condicaoReceitaPresencial
-        GROUP BY pc.descricao
+        WHERE (p.status ILIKE 'finalizado' OR p.situacao ILIKE 'finalizado') 
+          AND p.criado_em BETWEEN :inicio AND :fim 
+          AND pc.tipo = 'receita'
+          $condicaoReceitaPresencial
+        GROUP BY pc.descricao, p.tipo_venda
         
         UNION ALL
         
-        SELECT NULL as data_mov, 'Venda Online (' || pc.descricao || ')' as descricao, SUM(po.valor_total) as valor, 'RECEITA' as tipo_grupo
+        SELECT 
+            NULL as data_mov, 
+            CASE 
+                WHEN po.tipo_entrega ILIKE 'retirada' THEN 'Venda Online Retirada ('
+                ELSE 'Venda Online Entrega ('
+            END || pc.descricao || ')' as descricao, 
+            SUM(po.valor_total) as valor, 
+            'RECEITA' as tipo_grupo
         FROM pedidos_online po
         INNER JOIN plano_contas pc ON po.forma_pagamento_id = pc.id
-        WHERE po.status = 'Finalizado' AND po.data_pedido BETWEEN :inicio2 AND :fim2
-        $condicaoReceitaOnline
-        GROUP BY pc.descricao
+        WHERE po.status ILIKE 'finalizado' 
+          AND po.data_pedido BETWEEN :inicio2 AND :fim2
+          AND pc.tipo = 'receita'
+          $condicaoReceitaOnline
+        GROUP BY pc.descricao, po.tipo_entrega
     ),
     Despesas AS (
-        SELECT NULL as data_mov, pc.descricao, SUM(cp.valor_total) as valor, 'DESPESA' as tipo_grupo
+        SELECT 
+            NULL as data_mov, 
+            pc.descricao as descricao, 
+            SUM(cp.valor_total) as valor, 
+            'DESPESA' as tipo_grupo
         FROM contas_pagar cp 
         JOIN plano_contas pc ON cp.id_plano_conta = pc.id
-        WHERE cp.status = 'Pago' AND cp.data_pagamento BETWEEN :inicio3 AND :fim3 
-        $condicaoDespesa
+        WHERE cp.status = 'Pago' 
+          AND cp.data_pagamento BETWEEN :inicio3 AND :fim3 
+          AND pc.tipo = 'despesa'
+          $condicaoDespesa
         GROUP BY pc.descricao
     )
-    SELECT * FROM Receitas UNION ALL SELECT * FROM Despesas ORDER BY tipo_grupo DESC, valor DESC";
+    SELECT * FROM Receitas 
+    UNION ALL 
+    SELECT * FROM Despesas 
+    ORDER BY tipo_grupo DESC, valor DESC";
 }
 
 try {
@@ -114,7 +171,7 @@ try {
     $stmt->execute($params);
     $movimentacoes = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    die("Erro na consulta técnica: " . $e->getMessage());
+    die("Erro na consulta técnica da DRE: " . $e->getMessage());
 }
 
 $receitas = array_filter($movimentacoes, fn($m) => $m['tipo_grupo'] === 'RECEITA');
