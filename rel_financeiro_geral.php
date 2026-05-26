@@ -1,388 +1,259 @@
-<?php 
-require_once 'config/sessao.php'; 
+<?php
+require_once 'config/sessao.php';
 require_once 'config/conexao.php';
 require_once 'config/funcoes.php';
 
-// Parâmetros de filtro
-$mes = $_GET['mes'] ?? date('m');
-$ano = $_GET['ano'] ?? date('Y');
-$visao = $_GET['visao'] ?? 'sintetico'; 
-$plano_conta_filtro = $_GET['plano_conta'] ?? ''; 
+// 1. Filtros de Data e Hora (Padrao: mes atual completo)
+$data_inicial = $_GET['data_inicial'] ?? date('Y-m-01');
+$data_final   = $_GET['data_final']   ?? date('Y-m-t');
+$hora_inicial = $_GET['hora_inicial'] ?? '00:00';
+$hora_final   = $_GET['hora_final']   ?? '23:59';
 
-$data_inicio = "$ano-$mes-01";
-$data_fim = date("Y-m-t", strtotime($data_inicio));
+// Montagem dos timestamps completos para busca precisa no banco de dados
+$timestamp_inicial = $data_inicial . ' ' . $hora_inicial . ':00';
+$timestamp_final   = $data_final . ' ' . $hora_final . ':59';
 
-// Datas completas para filtros de data e hora em pedidos
-$inicio_timestamp = $data_inicio . ' 00:00:00';
-$fim_timestamp    = $data_fim . ' 23:59:59';
-
-/* ==========================================================================
-   1. BUSCA LISTA DE PLANO DE CONTAS (Organizado por Tipo para o Filtro)
-   ========================================================================== */
-try {
-    $sql_plano = "SELECT id, descricao, tipo FROM plano_contas WHERE status = 'ativo' ORDER BY tipo DESC, descricao ASC";
-    $stmt_plano = $pdo->query($sql_plano);
-    $lista_planos = $stmt_plano->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    $lista_planos = [];
-}
-
-/* ==========================================================================
-   2. CONSTRUÇÃO DAS CONDIÇÕES DE FILTRO
-   ========================================================================== */
-$condicaoDespesa = "";
-$condicaoReceitaPresencial = "";
-$condicaoReceitaOnline = "";
-
+// 2. Parametros da Query Unificada
 $params = [
-    ':inicio'  => $inicio_timestamp, ':fim'  => $fim_timestamp,
-    ':inicio2' => $inicio_timestamp, ':fim2' => $fim_timestamp,
-    ':inicio3' => $data_inicio,      ':fim3' => $data_fim
+    ':inicio' => $timestamp_inicial,
+    ':fim'    => $timestamp_final
 ];
 
-if (!empty($plano_conta_filtro)) {
-    $plano_id = (int)$plano_conta_filtro;
-    $params[':id_plano'] = $plano_id;
-
-    $condicaoDespesa           = " AND cp.id_plano_conta = :id_plano ";
-    $condicaoReceitaPresencial = " AND p.forma_pagamento_id = :id_plano ";
-    $condicaoReceitaOnline     = " AND po.forma_pagamento_id = :id_plano ";
-}
-
-/* ==========================================================================
-   3. CONSULTA DA DRE (CORRIGIDA COM MAPEAMENTO DE CANAIS E TIPOS)
-   ========================================================================== */
-if ($visao == 'analitico') {
-    $sql = "
-    WITH Receitas AS (
+// 3. Query Consolidada (UNION ALL) que unifica Pedidos Locais e Pedidos Online
+$sql = "
+    SELECT 
+        id,
+        data_pedido,
+        origem_canal,
+        origem_tipo,
+        cliente_nome,
+        forma_pagamento,
+        valor_total
+    FROM (
         SELECT 
-            p.criado_em as data_mov, 
-            CASE 
-                WHEN p.tipo_venda ILIKE 'balcao' THEN 'Presencial (Balcão) - '
-                WHEN p.tipo_venda ILIKE 'delivery' THEN 'Presencial (Delivery Manual) - '
-                WHEN p.tipo_venda ILIKE 'local' THEN 'Presencial (Consumo Local) - '
-                ELSE 'Presencial - '
-            END || pc.descricao as descricao, 
-            p.valor_total as valor, 
-            'RECEITA' as tipo_grupo 
+            p.id,
+            p.data_pedido,
+            'PRESENCIAL' AS origem_canal,
+            p.origem_tipo AS origem_tipo,
+            COALESCE(c.nome, 'Consumidor Final') AS cliente_nome,
+            COALESCE(fp.descricao, 'Nao Informado') AS forma_pagamento,
+            p.valor_total,
+            p.situacao
         FROM pedidos p
-        INNER JOIN plano_contas pc ON p.forma_pagamento_id = pc.id
-        WHERE (p.status ILIKE 'finalizado' OR p.situacao ILIKE 'finalizado') 
-          AND p.criado_em BETWEEN :inicio AND :fim
-          AND pc.tipo = 'receita'
-          $condicaoReceitaPresencial
-        
-        UNION ALL
-        
-        SELECT 
-            po.data_pedido as data_mov, 
-            CASE 
-                WHEN po.tipo_entrega ILIKE 'retirada' THEN 'Online (Retirada) - '
-                ELSE 'Online (Entrega) - '
-            END || pc.descricao as descricao, 
-            po.valor_total as valor, 
-            'RECEITA' as tipo_grupo 
-        FROM pedidos_online po
-        INNER JOIN plano_contas pc ON po.forma_pagamento_id = pc.id
-        WHERE po.status ILIKE 'finalizado' 
-          AND po.data_pedido BETWEEN :inicio2 AND :fim2
-          AND pc.tipo = 'receita'
-          $condicaoReceitaOnline
-    ),
-    Despesas AS (
-        SELECT 
-            cp.data_pagamento as data_mov, 
-            pc.descricao || ' (' || cp.descricao || ')' as descricao, 
-            cp.valor_total as valor, 
-            'DESPESA' as tipo_grupo 
-        FROM contas_pagar cp 
-        JOIN plano_contas pc ON cp.id_plano_conta = pc.id
-        WHERE cp.status = 'Pago' 
-          AND cp.data_pagamento BETWEEN :inicio3 AND :fim3
-          AND pc.tipo = 'despesa'
-          $condicaoDespesa
-    )
-    SELECT data_mov, descricao, valor, tipo_grupo FROM Receitas 
-    UNION ALL 
-    SELECT data_mov, descricao, valor, tipo_grupo FROM Despesas 
-    ORDER BY tipo_grupo DESC, data_mov ASC";
+        LEFT JOIN formas_pagamento fp ON p.forma_pagamento_id = fp.id
+        LEFT JOIN clientes c ON p.cliente_id = c.id
+        WHERE p.situacao = 'finalizado'
 
-} else {
-    $sql = "
-    WITH Receitas AS (
-        SELECT 
-            NULL as data_mov, 
-            CASE 
-                WHEN p.tipo_venda ILIKE 'balcao' THEN 'Venda Presencial Balcão ('
-                WHEN p.tipo_venda ILIKE 'delivery' THEN 'Venda Presencial Delivery ('
-                WHEN p.tipo_venda ILIKE 'local' THEN 'Venda Presencial Local ('
-                ELSE 'Venda Presencial ('
-            END || pc.descricao || ')' as descricao, 
-            SUM(p.valor_total) as valor, 
-            'RECEITA' as tipo_grupo
-        FROM pedidos p
-        INNER JOIN plano_contas pc ON p.forma_pagamento_id = pc.id
-        WHERE (p.status ILIKE 'finalizado' OR p.situacao ILIKE 'finalizado') 
-          AND p.criado_em BETWEEN :inicio AND :fim 
-          AND pc.tipo = 'receita'
-          $condicaoReceitaPresencial
-        GROUP BY pc.descricao, p.tipo_venda
-        
         UNION ALL
-        
+
         SELECT 
-            NULL as data_mov, 
-            CASE 
-                WHEN po.tipo_entrega ILIKE 'retirada' THEN 'Venda Online Retirada ('
-                ELSE 'Venda Online Entrega ('
-            END || pc.descricao || ')' as descricao, 
-            SUM(po.valor_total) as valor, 
-            'RECEITA' as tipo_grupo
+            po.id,
+            po.data_pedido,
+            'ONLINE' AS origem_canal,
+            'delivery' AS origem_tipo,
+            COALESCE(c.nome, 'Consumidor Online') AS cliente_nome,
+            COALESCE(fp.descricao, 'Nao Informado') AS forma_pagamento,
+            po.valor_total,
+            'finalizado' AS situacao
         FROM pedidos_online po
-        INNER JOIN plano_contas pc ON po.forma_pagamento_id = pc.id
-        WHERE po.status ILIKE 'finalizado' 
-          AND po.data_pedido BETWEEN :inicio2 AND :fim2
-          AND pc.tipo = 'receita'
-          $condicaoReceitaOnline
-        GROUP BY pc.descricao, po.tipo_entrega
-    ),
-    Despesas AS (
-        SELECT 
-            NULL as data_mov, 
-            pc.descricao as descricao, 
-            SUM(cp.valor_total) as valor, 
-            'DESPESA' as tipo_grupo
-        FROM contas_pagar cp 
-        JOIN plano_contas pc ON cp.id_plano_conta = pc.id
-        WHERE cp.status = 'Pago' 
-          AND cp.data_pagamento BETWEEN :inicio3 AND :fim3 
-          AND pc.tipo = 'despesa'
-          $condicaoDespesa
-        GROUP BY pc.descricao
-    )
-    SELECT * FROM Receitas 
-    UNION ALL 
-    SELECT * FROM Despesas 
-    ORDER BY tipo_grupo DESC, valor DESC";
+        LEFT JOIN formas_pagamento fp ON po.forma_pagamento_id = fp.id
+        LEFT JOIN clientes c ON po.cliente_id = c.id
+    ) AS todas_vendas
+    WHERE data_pedido BETWEEN :inicio AND :fim
+    ORDER BY data_pedido DESC
+";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+$vendas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// 4. Inicializacao dos Acumuladores de Receita para o DRE
+$receita_mesas          = 0;
+$receita_comandas       = 0;
+$receita_balcao         = 0;
+$receita_delivery_man   = 0;
+$receita_online         = 0;
+
+foreach ($vendas as $v) {
+    $valor = (float)$v['valor_total'];
+    
+    if ($v['origem_canal'] === 'ONLINE') {
+        $receita_online += $valor;
+    } else {
+        switch ($v['origem_tipo']) {
+            case 'mesa':
+                $receita_mesas += $valor;
+                break;
+            case 'comanda':
+                $receita_comandas += $valor;
+                break;
+            case 'balcao':
+                $receita_balcao += $valor;
+                break;
+            case 'delivery':
+                $receita_delivery_man += $valor;
+                break;
+            default:
+                $receita_balcao += $valor;
+                break;
+        }
+    }
 }
 
-try {
-    $stmt = $pdo->prepare($sql); 
-    $stmt->execute($params);
-    $movimentacoes = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    die("Erro na consulta técnica da DRE: " . $e->getMessage());
-}
-
-$receitas = array_filter($movimentacoes, fn($m) => $m['tipo_grupo'] === 'RECEITA');
-$despesas = array_filter($movimentacoes, fn($m) => $m['tipo_grupo'] === 'DESPESA');
-
-$totalReceita = array_sum(array_column($receitas, 'valor'));
-$totalDespesa = array_sum(array_column($despesas, 'valor'));
-$resultado = $totalReceita - $totalDespesa;
+$receita_bruta_total = $receita_mesas + $receita_comandas + $receita_balcao + $receita_delivery_man + $receita_online;
 ?>
 
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>DRE - Gestão Financeira</title>
+    <title>DRE - Receitas Consolidadas - Gestao Breno</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        :root {
-            --primary: #2c3e50;
-            --success: #27ae60;
-            --danger: #e74c3c;
-            --light: #ecf0f1;
-            --info: #3498db;
-            --warning: #f39c12;
-        }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; padding: 20px; }
-        .container { max-width: 1000px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        
-        .header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .btn { padding: 10px 15px; border-radius: 5px; text-decoration: none; font-weight: bold; border: none; cursor: pointer; display: inline-block; transition: 0.2s; font-size: 14px; }
-        .btn-dash { background-color: var(--primary); color: white; margin-right: 10px; }
-        .btn-dash:hover { background-color: #1a252f; }
-        .btn-print { background-color: #95a5a6; color: white; }
-        .btn-print:hover { background-color: #7f8c8d; }
-        .btn-visao { background-color: var(--warning); color: white; margin-right: 10px; }
-        .btn-visao:hover { background-color: #d35400; }
-
-        .cards-resumo { display: flex; gap: 15px; margin-bottom: 25px; }
-        .card { flex: 1; padding: 15px; border-radius: 6px; background: #fafafa; border-left: 4px solid #ccc; }
-        .card.card-receitas { border-left-color: var(--success); }
-        .card.card-despesas { border-left-color: var(--danger); }
-        .card.card-resultado { border-left-color: var(--info); }
-        .card span { display: block; font-size: 12px; color: #7f8c8d; font-weight: bold; text-transform: uppercase; }
-        .card strong { font-size: 20px; display: block; margin-top: 5px; }
-
-        .filtros { display: flex; gap: 15px; margin-bottom: 30px; align-items: flex-end; background: var(--light); padding: 15px; border-radius: 8px; flex-wrap: wrap; }
-        .filtros select { padding: 8px; border-radius: 4px; border: 1px solid #ccc; background: #fff; min-width: 130px; height: 38px; }
-        .btn-filter { background: var(--info); color: white; height: 38px; padding: 0 20px; }
-        .btn-filter:hover { background: #2980b9; }
-
-        .dre-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        .dre-table th { text-align: left; padding: 15px; border-bottom: 2px solid var(--primary); color: var(--primary); font-weight: 600; }
-        .dre-table td { padding: 12px 15px; border-bottom: 1px solid #eee; }
-        
-        .grupo-title { background: #fdfdfd; font-weight: bold; color: #7f8c8d; font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px; }
-        .subtotal { background: #f8f9fa; font-weight: bold; }
-        .lucro-liquido { background: var(--primary); color: white; font-size: 1.15em; font-weight: bold; }
-        
-        .text-success { color: var(--success); }
-        .text-danger { color: var(--danger); }
-        .right { text-align: right; }
-        .sem-dados { text-align: center; color: #95a5a6; font-style: italic; padding: 20px !important; }
-
-        @media print { 
-            .filtros, .header-actions, .btn { display: none !important; } 
-            body { background: white; padding: 0; }
-            .container { box-shadow: none; padding: 0; max-width: 100%; }
+        body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .card-dre { border-radius: 12px; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .table-dre tbody tr td { vertical-align: middle; padding: 12px 16px; }
+        .indent-1 { padding-left: 35px !important; color: #495057; }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: #fff; padding: 0; }
+            .card-dre { box-shadow: none; }
         }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <div class="header-actions">
-        <h2>DRE - Visão Realizada (Caixa) - <?= ucfirst($visao) ?></h2>
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 no-print">
+        <h2><i class="fas fa-chart-line text-success"></i> DRE - Consolidacao de Receitas</h2>
         <div>
-            <a href="?mes=<?= $mes ?>&ano=<?= $ano ?>&visao=<?= $visao == 'sintetico' ? 'analitico' : 'sintetico' ?>&plano_conta=<?= urlencode($plano_conta_filtro) ?>" class="btn btn-visao">
-                Ver Plano <?= $visao == 'sintetico' ? 'Analítico' : 'Sintético' ?>
-            </a>
-            <button onclick="window.print()" class="btn btn-print">Imprimir PDF</button>
-            <a href="dashboard.php" class="btn btn-dash">← Voltar</a>
-        </div>
-    </div>
-    
-    <form method="GET" class="filtros">
-        <input type="hidden" name="visao" value="<?= $visao ?>">
-        <div>
-            <label style="font-size:12px; font-weight:bold;">Mês:</label><br>
-            <select name="mes">
-                <?php 
-                $mesesNome = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-                for($i=1; $i<=12; $i++): $m = sprintf('%02d', $i); 
-                ?>
-                    <option value="<?= $m ?>" <?= $mes == $m ? 'selected' : '' ?>><?= $mesesNome[$i-1] ?></option>
-                <?php endfor; ?>
-            </select>
-        </div>
-        <div>
-            <label style="font-size:12px; font-weight:bold;">Ano:</label><br>
-            <select name="ano">
-                <?php 
-                $anoAtual = (int)date('Y');
-                for($a = $anoAtual - 2; $a <= $anoAtual + 1; $a++): 
-                ?>
-                    <option value="<?= $a ?>" <?= $ano == $a ? 'selected' : '' ?>><?= $a ?></option>
-                <?php endfor; ?>
-            </select>
-        </div>
-        <div>
-            <label style="font-size:12px; font-weight:bold;">Filtrar Conta/Forma:</label><br>
-            <select name="plano_conta" style="min-width: 230px;">
-                <option value="">-- Todos os Planos --</option>
-                
-                <optgroup label="Receitas (Formas de Pagamento)">
-                    <?php foreach($lista_planos as $plano): if($plano['tipo'] == 'receita'): ?>
-                        <option value="<?= $plano['id'] ?>" <?= $plano_conta_filtro == $plano['id'] ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($plano['descricao']) ?>
-                        </option>
-                    <?php endif; endforeach; ?>
-                </optgroup>
-
-                <optgroup label="Custos / Despesas">
-                    <?php foreach($lista_planos as $plano): if($plano['tipo'] == 'despesa'): ?>
-                        <option value="<?= $plano['id'] ?>" <?= $plano_conta_filtro == $plano['id'] ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($plano['descricao']) ?>
-                        </option>
-                    <?php endif; endforeach; ?>
-                </optgroup>
-            </select>
-        </div>
-        <div>
-            <button type="submit" class="btn btn-filter">Filtrar</button>
-            <?php if(!empty($plano_conta_filtro)): ?>
-                <a href="?mes=<?= $mes ?>&ano=<?= $ano ?>&visao=<?= $visao ?>" style="background:#6c757d; color:white; text-decoration:none; padding:9px 15px; border-radius:4px; font-size:13px; font-weight:bold; margin-left:5px; display:inline-block; height:18px;">Limpar</a>
-            <?php endif; ?>
-        </div>
-    </form>
-
-    <div class="cards-resumo">
-        <div class="card card-receitas">
-            <span>Receitas (A)</span>
-            <strong class="text-success">R$ <?= number_format($totalReceita, 2, ',', '.') ?></strong>
-        </div>
-        <div class="card card-despesas">
-            <span>Despesas (B)</span>
-            <strong class="text-danger">R$ <?= number_format($totalDespesa, 2, ',', '.') ?></strong>
-        </div>
-        <div class="card card-resultado">
-            <span>Resultado Líquido (A - B)</span>
-            <strong class="<?= $resultado >= 0 ? 'text-success' : 'text-danger' ?>">R$ <?= number_format($resultado, 2, ',', '.') ?></strong>
+            <button onclick="window.print()" class="btn btn-dark me-2"><i class="fas fa-print"></i> Imprimir</button>
+            <a href="dashboard.php" class="btn btn-outline-secondary"><i class="fas fa-arrow-left"></i> Painel Geral</a>
         </div>
     </div>
 
-    <table class="dre-table">
-        <thead>
-            <tr>
-                <?php if($visao == 'analitico'): ?><th style="width: 130px;">Data Mov.</th><?php endif; ?>
-                <th>Descrição das Operações</th>
-                <th class="right" style="width: 180px;">Valor Acumulado</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr class="grupo-title"><td colspan="<?= $visao == 'analitico' ? 3 : 2 ?>">Receitas Operacionais</td></tr>
-            <?php if(empty($receitas)): ?>
-                <tr><td colspan="<?= $visao == 'analitico' ? 3 : 2 ?>" class="sem-dados">Nenhuma receita registrada neste período.</td></tr>
-            <?php else: ?>
-                <?php foreach($receitas as $mov): ?>
-                    <tr>
-                        <?php if($visao == 'analitico'): ?><td><?= date('d/m/Y', strtotime($mov['data_mov'])) ?></td><?php endif; ?>
-                        <td>(+) <?= htmlspecialchars($mov['descricao']) ?></td>
-                        <td class="right text-success" style="font-weight: 500;">R$ <?= number_format($mov['valor'], 2, ',', '.') ?></td>
-                    </tr>
-                <?php endforeach; ?>
-            <?php endif; ?>
-            <tr class="subtotal">
-                <td colspan="<?= $visao == 'analitico' ? 2 : 1 ?>">FATURAMENTO BRUTO</td>
-                <td class="right text-success">R$ <?= number_format($totalReceita, 2, ',', '.') ?></td>
-            </tr>
+    <div class="card card-dre mb-4 no-print">
+        <div class="card-body bg-white border-0 rounded-3">
+            <form method="GET" class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold text-muted">Data Inicial</label>
+                    <input type="date" name="data_inicial" class="form-control" value="<?= htmlspecialchars($data_inicial) ?>">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold text-muted">Hora Inicial</label>
+                    <input type="time" name="hora_inicial" class="form-control" value="<?= htmlspecialchars($hora_inicial) ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold text-muted">Data Final</label>
+                    <input type="date" name="data_final" class="form-control" value="<?= htmlspecialchars($data_final) ?>">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold text-muted">Hora Final</label>
+                    <input type="time" name="hora_final" class="form-control" value="<?= htmlspecialchars($hora_final) ?>">
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-success w-100 fw-bold"><i class="fas fa-sync-alt"></i> Atualizar</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
-            <tr><td colspan="<?= $visao == 'analitico' ? 3 : 2 ?>">&nbsp;</td></tr> 
-            
-            <tr class="grupo-title"><td colspan="<?= $visao == 'analitico' ? 3 : 2 ?>">Custos e Despesas Pagas</td></tr>
-            <?php if(empty($despesas)): ?>
-                <tr><td colspan="<?= $visao == 'analitico' ? 3 : 2 ?>" class="sem-dados">Nenhuma despesa registrada neste período.</td></tr>
-            <?php else: ?>
-                <?php foreach($despesas as $mov): ?>
-                    <tr>
-                        <?php if($visao == 'analitico'): ?><td><?= date('d/m/Y', strtotime($mov['data_mov'])) ?></td><?php endif; ?>
-                        <td>(-) <?= htmlspecialchars($mov['descricao']) ?></td>
-                        <td class="right text-danger" style="font-weight: 500;">R$ <?= number_format($mov['valor'], 2, ',', '.') ?></td>
-                    </tr>
-                <?php endforeach; ?>
-            <?php endif; ?>
-            <tr class="subtotal">
-                <td colspan="<?= $visao == 'analitico' ? 2 : 1 ?>">TOTAL DE DESPESAS</td>
-                <td class="right text-danger">R$ <?= number_format($totalDespesa, 2, ',', '.') ?></td>
-            </tr>
+    <div class="card card-dre mb-4">
+        <div class="card-header bg-success text-white fw-bold d-flex justify-content-between align-items-center py-3">
+            <span><i class="fas fa-wallet me-2"></i> DEMONSTRATIVO DE RESULTADO DO EXERCICIO (RECEITAS)</span>
+            <span class="badge bg-white text-success font-monospace"><?= date('d/m/Y', strtotime($timestamp_inicial)) ?> ate <?= date('d/m/Y', strtotime($timestamp_final)) ?></span>
+        </div>
+        <div class="card-body p-0 bg-white rounded-bottom">
+            <div class="table-responsive">
+                <table class="table table-hover table-dre mb-0">
+                    <thead>
+                        <tr class="table-light border-bottom text-uppercase fs-7 text-muted">
+                            <th>Estrutura Operacional</th>
+                            <th class="text-end" style="width: 250px;">Faturamento Bruto</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="table-success fw-bold fs-5 border-bottom">
+                            <td>1. RECEITA OPERACIONAL BRUTA (FATURAMENTO)</td>
+                            <td class="text-end text-success">R$ <?= number_format($receita_bruta_total, 2, ',', '.') ?></td>
+                        </tr>
+                        <tr>
+                            <td class="indent-1"><i class="fas fa-utensils text-muted me-2"></i> 1.1 Consumo Local - Mesas</td>
+                            <td class="text-end fw-semibold text-secondary">R$ <?= number_format($receita_mesas, 2, ',', '.') ?></td>
+                        </tr>
+                        <tr>
+                            <td class="indent-1"><i class="fas fa-clipboard-list text-muted me-2"></i> 1.2 Consumo Local - Comandas</td>
+                            <td class="text-end fw-semibold text-secondary">R$ <?= number_format($receita_comandas, 2, ',', '.') ?></td>
+                        </tr>
+                        <tr>
+                            <td class="indent-1"><i class="fas fa-cash-register text-muted me-2"></i> 1.3 Vendas Rapidas - Balcao</td>
+                            <td class="text-end fw-semibold text-secondary">R$ <?= number_format($receita_balcao, 2, ',', '.') ?></td>
+                        </tr>
+                        <tr>
+                            <td class="indent-1"><i class="fas fa-motorcycle text-muted me-2"></i> 1.4 Delivery - Lancamento Manual</td>
+                            <td class="text-end fw-semibold text-secondary">R$ <?= number_format($receita_delivery_man, 2, ',', '.') ?></td>
+                        </tr>
+                        <tr>
+                            <td class="indent-1"><i class="fas fa-globe text-muted me-2"></i> 1.5 Delivery Online - Cardapio Plataforma Web</td>
+                            <td class="text-end fw-semibold text-secondary">R$ <?= number_format($receita_online, 2, ',', '.') ?></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 
-            <tr class="lucro-liquido">
-                <td colspan="<?= $visao == 'analitico' ? 2 : 1 ?>">RESULTADO LÍQUIDO DO PERÍODO</td>
-                <td class="right">R$ <?= number_format($resultado, 2, ',', '.') ?></td>
-            </tr>
-        </tbody>
-    </table>
-
-    <?php 
-        $margemLucro = ($totalReceita > 0) ? ($resultado / $totalReceita) * 100 : 0;
-        $corMargem = $margemLucro >= 0 ? 'text-success' : 'text-danger';
-    ?>
-    <div style="margin-top: 20px; text-align: right; padding: 15px; background: #fafafa; border: 1px solid #eee; border-radius: 5px; font-size: 15px;">
-        <strong>Margem de Lucro Operacional: </strong>
-        <span class="<?= $corMargem ?>" style="font-weight: bold;"><?= number_format($margemLucro, 2, ',', '.') ?>%</span>
+    <div class="card card-dre">
+        <div class="card-header bg-dark text-white fw-bold py-3">
+            <i class="fas fa-list-ul me-2"></i> Trilhas de Auditoria: Vendas Computadas na Baixa
+        </div>
+        <div class="card-body p-0 bg-white rounded-bottom">
+            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                <table class="table table-striped table-hover align-middle mb-0 text-nowrap">
+                    <thead class="table-light sticky-top">
+                        <tr class="small fw-bold text-muted">
+                            <th>ID do Pedido</th>
+                            <th>Data/Hora Baixa</th>
+                            <th>Canal Origem</th>
+                            <th>Tipo Operacao</th>
+                            <th>Cliente</th>
+                            <th>Forma de Pagamento</th>
+                            <th class="text-end">Valor Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (count($vendas) > 0): ?>
+                            <?php foreach ($vendas as $v): ?>
+                                <tr>
+                                    <td><strong>#<?= str_pad($v['id'], 5, '0', STR_PAD_LEFT) ?></strong></td>
+                                    <td><?= date('d/m/Y H:i', strtotime($v['data_pedido'])) ?></td>
+                                    <td>
+                                        <?php if ($v['origem_canal'] === 'ONLINE'): ?>
+                                            <span class="badge bg-success"><i class="fas fa-globe"></i> ONLINE</span>
+                                        <?php else: ?>
+                                            <span class="badge bg-secondary"><i class="fas fa-store"></i> PRESENCIAL</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <span class="text-capitalize text-muted font-monospace small bg-light px-2 py-1 rounded">
+                                            <?= htmlspecialchars($v['origem_tipo']) ?>
+                                        </span>
+                                    </td>
+                                    <td><?= htmlspecialchars($v['cliente_nome']) ?></td>
+                                    <td><small class="text-muted"><?= htmlspecialchars($v['forma_pagamento']) ?></small></td>
+                                    <td class="text-end fw-bold text-dark">R$ <?= number_format($v['valor_total'], 2, ',', '.') ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="7" class="text-center py-4 text-muted">Nenhum lancamento finalizado encontrado neste periodo.</td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 </div>
 
