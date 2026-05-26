@@ -3,7 +3,7 @@ require_once 'config/sessao.php';
 require_once 'config/conexao.php';
 require_once 'config/funcoes.php';
 
-$busca     = isset($_GET['busca']) ? $_GET['busca'] : '';
+$busca     = isset($_GET['busca']) ? trim($_GET['busca']) : '';
 $filter    = isset($_GET['filter']) ? $_GET['filter'] : 'todos';
 $categoria = isset($_GET['categoria']) ? $_GET['categoria'] : '';
 
@@ -22,13 +22,17 @@ $sql = "SELECT
             p.nome, 
             p.estoque, 
             c.nome as nome_categoria,
-            (SELECT SUM(quantidade) FROM compras_itens WHERE id_produto = p.id) as total_entradas,
-            (SELECT SUM(quantidade) FROM pedidos_itens WHERE produto_id = p.id) as total_saidas
+            (SELECT COALESCE(SUM(quantidade), 0) FROM compras_itens WHERE id_produto = p.id) as total_entradas,
+            (SELECT COALESCE(SUM(quantidade), 0) FROM pedidos_itens WHERE produto_id = p.id) as total_saidas
         FROM produtos p
 LEFT JOIN categorias c ON p.categoria_id = c.id
-        WHERE (p.nome ILIKE ? 
-           OR p.codigo_barras LIKE ? 
-           OR p.id::text LIKE ?)";
+        WHERE 1=1";
+
+// Filtro de Busca por texto/ID/Código de barras
+if (!empty($busca)) {
+    $sql .= " AND (p.nome ILIKE ? OR p.codigo_barras LIKE ? OR p.id::text LIKE ?)";
+}
+
 // Filtro por Categoria (usando o ID)
 if (!empty($categoria)) {
     $sql .= " AND p.categoria_id = " . (int)$categoria;
@@ -45,7 +49,14 @@ $sql .= " ORDER BY p.nome ASC";
 
 try {
     $stmt = $pdo->prepare($sql);
-    $stmt->execute(["%$busca%", "%$busca%", "%$busca%"]);
+    
+    // Se houver busca, passa os parâmetros, senão executa array vazio
+    if (!empty($busca)) {
+        $stmt->execute(["%$busca%", "%$busca%", "%$busca%"]);
+    } else {
+        $stmt->execute();
+    }
+    
     $produtos = $stmt->fetchAll();
 } catch (PDOException $e) {
     die("Erro Crítico: " . $e->getMessage());
@@ -131,9 +142,9 @@ foreach ($produtos as $prod) {
 
         <div class="filter-nav">
             <strong>Rápido:</strong>
-            <a href="?busca=<?= $busca ?>&categoria=<?= $categoria ?>&filter=todos" class="filter-btn <?= $filter == 'todos' ? 'active' : '' ?>">Todos</a>
-            <a href="?busca=<?= $busca ?>&categoria=<?= $categoria ?>&filter=baixo" class="filter-btn <?= $filter == 'baixo' ? 'active' : '' ?>">Baixo Estoque</a>
-            <a href="?busca=<?= $busca ?>&categoria=<?= $categoria ?>&filter=zerado" class="filter-btn <?= $filter == 'zerado' ? 'active' : '' ?>">Zerados</a>
+            <a href="?busca=<?= urlencode($busca) ?>&categoria=<?= $categoria ?>&filter=todos" class="filter-btn <?= $filter == 'todos' ? 'active' : '' ?>">Todos</a>
+            <a href="?busca=<?= urlencode($busca) ?>&categoria=<?= $categoria ?>&filter=baixo" class="filter-btn <?= $filter == 'baixo' ? 'active' : '' ?>">Baixo Estoque</a>
+            <a href="?busca=<?= urlencode($busca) ?>&categoria=<?= $categoria ?>&filter=zerado" class="filter-btn <?= $filter == 'zerado' ? 'active' : '' ?>">Zerados</a>
         </div>
     </div>
 
@@ -150,22 +161,28 @@ foreach ($produtos as $prod) {
             </tr>
         </thead>
         <tbody>
-            <?php foreach ($produtos as $p): 
-                $v_atual = (float)$p['estoque'];
-                $status_class = "status-ok"; $label = "OK";
-                if($v_atual <= 0) { $status_class = "status-esgotado"; $label = "ZERADO"; }
-                elseif($v_atual <= 5) { $status_class = "status-baixo"; $label = "BAIXO"; }
-            ?>
-            <tr>
-                <td>#<?= $p['codigo_barras'] ?: $p['id'] ?></td>
-                <td><small style="color:#64748b"><?= htmlspecialchars($p['nome_categoria'] ?: 'Sem Categoria') ?></small></td>
-                <td><strong><?= htmlspecialchars($p['nome']) ?></strong></td>
-                <td style="color:green; text-align:center;">+<?= (float)($p['total_entradas'] ?? 0) ?></td>
-                <td style="color:red; text-align:center;">-<?= (float)($p['total_saidas'] ?? 0) ?></td>
-                <td style="text-align:center;"><strong><?= $v_atual ?></strong></td>
-                <td><span class="badge <?= $status_class ?>"><?= $label ?></span></td>
-            </tr>
-            <?php endforeach; ?>
+            <?php if (count($produtos) > 0): ?>
+                <?php foreach ($produtos as $p): 
+                    $v_atual = (float)$p['estoque'];
+                    $status_class = "status-ok"; $label = "OK";
+                    if($v_atual <= 0) { $status_class = "status-esgotado"; $label = "ZERADO"; }
+                    elseif($v_atual <= 5) { $status_class = "status-baixo"; $label = "BAIXO"; }
+                ?>
+                <tr>
+                    <td>#<?= $p['codigo_barras'] ?: $p['id'] ?></td>
+                    <td><small style="color:#64748b"><?= htmlspecialchars($p['nome_categoria'] ?: 'Sem Categoria') ?></small></td>
+                    <td><strong><?= htmlspecialchars($p['nome']) ?></strong></td>
+                    <td style="color:green; text-align:center;">+<?= (float)$p['total_entradas'] ?></td>
+                    <td style="color:red; text-align:center;">-<?= (float)$p['total_saidas'] ?></td>
+                    <td style="text-align:center;"><strong><?= $v_atual ?></strong></td>
+                    <td><span class="badge <?= $status_class ?>"><?= $label ?></span></td>
+                </tr>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <tr>
+                    <td colspan="7" style="text-align: center; padding: 30px; color: #64748b;">Nenhum produto encontrado.</td>
+                </tr>
+            <?php endif; ?>
         </tbody>
     </table>
 </div>
