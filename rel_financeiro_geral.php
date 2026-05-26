@@ -51,7 +51,7 @@ if (!empty($plano_conta_filtro)) {
 if ($visao == 'analitico') {
     $sql = "
     WITH Receitas AS (
-        SELECT p.data_pedido as data_mov, pc.descricao as descricao, p.valor_total as valor, 'RECEITA' as tipo_grupo 
+        SELECT p.data_pedido as data_mov, 'Presencial - ' || pc.descricao as descricao, p.valor_total as valor, 'RECEITA' as tipo_grupo 
         FROM pedidos p
         INNER JOIN plano_contas pc ON p.forma_pagamento_id = pc.id
         WHERE p.situacao = 'finalizado' AND p.data_pedido BETWEEN :inicio AND :fim
@@ -82,7 +82,7 @@ if ($visao == 'analitico') {
 } else {
     $sql = "
     WITH Receitas AS (
-        SELECT NULL as data_mov, pc.descricao as descricao, SUM(p.valor_total) as valor, 'RECEITA' as tipo_grupo
+        SELECT NULL as data_mov, 'Venda Presencial (' || pc.descricao || ')' as descricao, SUM(p.valor_total) as valor, 'RECEITA' as tipo_grupo
         FROM pedidos p
         INNER JOIN plano_contas pc ON p.forma_pagamento_id = pc.id
         WHERE p.situacao = 'finalizado' AND p.data_pedido BETWEEN :inicio AND :fim 
@@ -91,7 +91,7 @@ if ($visao == 'analitico') {
         
         UNION ALL
         
-        SELECT NULL as data_mov, 'Online - ' || pc.descricao as descricao, SUM(po.valor_total) as valor, 'RECEITA' as tipo_grupo
+        SELECT NULL as data_mov, 'Venda Online (' || pc.descricao || ')' as descricao, SUM(po.valor_total) as valor, 'RECEITA' as tipo_grupo
         FROM pedidos_online po
         INNER JOIN plano_contas pc ON po.forma_pagamento_id = pc.id
         WHERE po.status = 'Finalizado' AND po.data_pedido BETWEEN :inicio2 AND :fim2
@@ -283,7 +283,7 @@ $resultado = $totalReceita - $totalDespesa;
                 <?php foreach($receitas as $mov): ?>
                     <tr>
                         <?php if($visao == 'analitico'): ?><td><?= date('d/m/Y', strtotime($mov['data_mov'])) ?></td><?php endif; ?>
-                        <td>(+) <?= $visao == 'sintetico' ? 'Vendas '.ucfirst($mov['descricao']) : $mov['descricao'] ?></td>
+                        <td>(+) <?= htmlspecialchars($mov['descricao']) ?></td>
                         <td class="right text-success" style="font-weight: 500;">R$ <?= number_format($mov['valor'], 2, ',', '.') ?></td>
                     </tr>
                 <?php endforeach; ?>
@@ -302,7 +302,7 @@ $resultado = $totalReceita - $totalDespesa;
                 <?php foreach($despesas as $mov): ?>
                     <tr>
                         <?php if($visao == 'analitico'): ?><td><?= date('d/m/Y', strtotime($mov['data_mov'])) ?></td><?php endif; ?>
-                        <td>(-) <?= $mov['descricao'] ?></td>
+                        <td>(-) <?= htmlspecialchars($mov['descricao']) ?></td>
                         <td class="right text-danger" style="font-weight: 500;">R$ <?= number_format($mov['valor'], 2, ',', '.') ?></td>
                     </tr>
                 <?php endforeach; ?>
