@@ -634,14 +634,20 @@ body{
             type="text"
             id="cli-cpf"
             class="input-checkout"
-            placeholder="CPF"
+            placeholder="CPF (somente os 11 números)"
+            maxlength="11"
+            oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+            required
         >
 
         <input
             type="text"
             id="cli-telefone"
             class="input-checkout"
-            placeholder="WhatsApp"
+            placeholder="WhatsApp (com DDD - somente números)"
+            maxlength="11"
+            oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+            required
         >
 
         <label>
