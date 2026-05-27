@@ -9,12 +9,12 @@ $data_final   = $_GET['data_final']   ?? date('Y-m-d');
 $forma_id     = $_GET['forma_id']     ?? '';
 $considerar_online = $_GET['online']  ?? 'sim';
 
-// 2. Preparação da Query
+// Preparação de parâmetros
 $params = [$data_inicial . ' 00:00:00', $data_final . ' 23:59:59'];
 
-// ===============================
-// 🔥 PARTE LOCAL (Lendo tipo_venda)
-// ===============================
+// ==============================================================
+// 🔥 PARTE 1: APENAS PEDIDOS PRESENCIAIS (Não Cancelados)
+// ==============================================================
 $sql = "SELECT 
             p.id, 
             p.criado_em as data_pedido, 
@@ -31,17 +31,20 @@ $sql = "SELECT
         JOIN formas_pagamento fp ON p.forma_pagamento_id = fp.id
         LEFT JOIN clientes c ON p.cliente_id = c.id
         WHERE p.criado_em BETWEEN ? AND ? 
-        AND (p.status ILIKE 'finalizado' OR p.situacao ILIKE 'finalizado')";
+        -- Garante que só puxa vendas válidas locais e ignora lixo ou cancelados
+        AND p.status NOT ILIKE 'Cancelado'
+        AND p.situacao NOT ILIKE 'Cancelado'
+        AND (p.origem_tipo NOT ILIKE 'Online' OR p.origem_tipo IS NULL)";
 
-// filtro forma pagamento
+// Filtro por forma de pagamento na parte local
 if ($forma_id) {
     $sql .= " AND p.forma_pagamento_id = ?";
     $params[] = $forma_id;
 }
 
-// ===============================
-// 🔥 PARTE ONLINE (Lendo tipo_entrega)
-// ===============================
+// ==============================================================
+// 🔥 PARTE 2: APENAS PEDIDOS ONLINE (Unindo com clientes_online)
+// ==============================================================
 if ($considerar_online === 'sim') {
 
     $sql .= " UNION ALL 
@@ -59,7 +62,8 @@ if ($considerar_online === 'sim') {
               JOIN formas_pagamento fp2 ON po.forma_pagamento_id = fp2.id
               LEFT JOIN clientes_online co ON po.cliente_id = co.id
               WHERE po.data_pedido BETWEEN ? AND ? 
-              AND po.status ILIKE 'finalizado'";
+              -- Filtro rígido para não somar pedidos cancelados ou rejeitados no site
+              AND po.status NOT ILIKE 'Cancelado'";
 
     $params[] = $data_inicial . ' 00:00:00';
     $params[] = $data_final . ' 23:59:59';
@@ -80,9 +84,9 @@ try {
     die("Erro na consulta do relatório: " . $e->getMessage());
 }
 
-// ===============================
-// 3. TOTAIS
-// ===============================
+// ==============================================================
+// 3. PROCESSAMENTO DOS TOTAIS DO RESUMO
+// ==============================================================
 $total_geral = 0;
 $resumo = [];
 
@@ -92,9 +96,7 @@ foreach($vendas as $v) {
     $resumo[$nome_f] = ($resumo[$nome_f] ?? 0) + (float)$v['valor_total'];
 }
 
-// ===============================
-// FORMAS PAGAMENTO
-// ===============================
+// Busca formas de pagamento para o select do filtro
 $todas_formas = $pdo->query("
     SELECT id, descricao 
     FROM formas_pagamento 
