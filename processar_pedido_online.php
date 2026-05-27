@@ -11,6 +11,9 @@ if (!$dados) {
 }
 
 try {
+    // Iniciamos a transação no topo para blindar o banco contra qualquer erro nas validações
+    $pdo->beginTransaction();
+
     // ==============================================================
     // TRAVAS DE SEGURANÇA NO BACK-END (VALIDAÇÃO DOS DADOS)
     // ==============================================================
@@ -27,15 +30,11 @@ try {
         throw new Exception('O telefone informado é inválido. Insira o DDD + Número.');
     }
 
-    // 3. Validação do Nome (Aceita letras com acentos e espaços)
+    // 3. Validação simplificada do Nome para evitar quebras por encoding/charset
     $nome_tratado = trim($dados['cliente_nome'] ?? '');
-    // Regex compatível com caracteres acentuados em UTF-8
-    if (empty($nome_tratado) || !preg_match('/^[A-Za-zzÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑáàâãéèêíïóôõöúçñ ]+$/u', $nome_tratado)) {
-        throw new Exception('O nome inserido é inválido. Utilize apenas letras.');
+    if (empty($nome_tratado) || strlen($nome_tratado) < 3) {
+        throw new Exception('O nome inserido é inválido. Digite ao menos 3 caracteres.');
     }
-
-    // Inicia a transação após validar as regras básicas
-    $pdo->beginTransaction();
 
     $tipo_entrega = $dados['tipo_entrega'] ?? 'entrega';
     $endereco_pedido = ($tipo_entrega === 'entrega') ? $dados['endereco_completo'] : 'Retirada no Balcão';
@@ -121,7 +120,7 @@ try {
 
     $pedido_id = $stmtPedido->fetchColumn(); 
 
-/* ==============================================================
+    /* ==============================================================
        4. ITENS, VALIDAÇÃO DE DISPONIBILIDADE E BAIXA DE ESTOQUE
     ============================================================== */
     $sqlItem = "
@@ -132,11 +131,11 @@ try {
         )
     ";
 
-    // Query para consultar o estoque atual e o nome do produto antes de vender
-    $sqlConsultaEstoque = "SELECT nome, estoque FROM produtos WHERE id = ? LIMIT 1";
+    // AJUSTE CRUCIAL: Tratando a coluna estoque (VARCHAR do Postgres) convertendo para NUMERIC na query
+    $sqlConsultaEstoque = "SELECT nome, CAST(estoque AS NUMERIC) as estoque_num FROM produtos WHERE id = ? LIMIT 1";
 
-    // Query para subtrair a quantidade do estoque
-    $sqlEstoque = "UPDATE produtos SET estoque = estoque - :quantidade WHERE id = :produto_id";
+    // Convertemos o texto para número, fazemos o decremento, e salvamos de volta formatado como VARCHAR
+    $sqlEstoque = "UPDATE produtos SET estoque = CAST(CAST(estoque AS NUMERIC) - :quantidade AS VARCHAR) WHERE id = :produto_id";
 
     $stmtItem = $pdo->prepare($sqlItem);
     $stmtConsultaEstoque = $pdo->prepare($sqlConsultaEstoque);
@@ -148,7 +147,7 @@ try {
         $preco_uni = (float)$item['preco'];
         $subtotal_item = $preco_uni * $qtd_comprada;
 
-        // 1. Busca o estoque atualizado direto no banco de dados
+        // 1. Busca o estoque já tratado como número
         $stmtConsultaEstoque->execute([$id_produto]);
         $prodBanco = $stmtConsultaEstoque->fetch(PDO::FETCH_ASSOC);
 
@@ -156,15 +155,15 @@ try {
             throw new Exception("Produto ID #{$id_produto} não foi encontrado no sistema.");
         }
 
-        $estoque_atual = (float)$prodBanco['estoque'];
+        $estoque_atual = (float)$prodBanco['estoque_num']; // Lendo o alias numérico da query
         $nome_produto = $prodBanco['nome'];
 
-        // 2. TRAVA CRUCIAL: Se a quantidade pedida for maior que o estoque em estoque
+        // 2. TRAVA DE ESTOQUE: Se tentar levar mais do que tem disponível
         if ($qtd_comprada > $estoque_atual) {
-            throw new Exception("Estoque insuficiente para o item '{$nome_produto}'. Temos apenas {$estoque_atual} unidades disponíveis e você tentou adicionar {$qtd_comprada}.");
+            throw new Exception("Estoque insuficiente para '{$nome_produto}'. Temos apenas {$estoque_atual} disponíveis e você tentou levar {$qtd_comprada}.");
         }
 
-        // 3. Se passou pela trava, grava o item do pedido
+        // 3. Insere na tabela vinculada pedidos_online_itens
         $stmtItem->execute([
             ':pedido_id' => $pedido_id,
             ':produto_id' => $id_produto,
@@ -173,10 +172,21 @@ try {
             ':subtotal' => $subtotal_item
         ]);
 
-        // 4. Faz a baixa física de estoque do produto
+        // 4. Executa a movimentação da tabela produtos
         $stmtEstoque->execute([
             ':quantidade' => $qtd_comprada,
             ':produto_id' => $id_produto
         ]);
     }
+
+    // Se todos os itens passaram pelas travas com sucesso, consolida a gravação
+    $pdo->commit();
+    echo json_encode(['sucesso' => true, 'pedido_id' => $pedido_id]);
+
+} catch (Exception $e) {
+    if (isset($pdo) && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    echo json_encode(['sucesso' => false, 'erro' => $e->getMessage()]);
+}
 ?>
