@@ -1,155 +1,156 @@
 <?php 
 
 require_once 'config/sessao.php'; 
-
 require_once 'config/conexao.php';
-
 require_once 'config/funcoes.php';
 
 
-
-// 1. Filtros
+// ===============================
+// 1. FILTROS
+// ===============================
 
 $data_inicial = $_GET['data_inicial'] ?? date('Y-m-d');
-
 $data_final   = $_GET['data_final']   ?? date('Y-m-d');
-
 $forma_id     = $_GET['forma_id']     ?? '';
-
 $considerar_online = $_GET['online']  ?? 'sim';
 
 
+// ===============================
+// 2. QUERY
+// ===============================
 
-// 2. Preparação da Query
-
-$params = [$data_inicial . ' 00:00:00', $data_final . ' 23:59:59'];
-
+$params = [
+    $data_inicial . ' 00:00:00',
+    $data_final . ' 23:59:59'
+];
 
 
 // ===============================
-
-// 🔥 PARTE LOCAL (Lendo tipo_venda)
-
+// 🔥 VENDAS PRESENCIAIS
 // ===============================
 
-$sql = "SELECT 
+$sql = "
+SELECT 
+    p.id,
+    p.criado_em as data_pedido,
+    p.valor_total,
+    fp.descricao as forma_nome,
+    c.nome as nome_cliente,
 
-            p.id, 
+    'cliente_presencial' as tipo_cliente,
 
-            p.criado_em as data_pedido, 
+    CASE 
+        WHEN p.tipo_venda ILIKE 'balcao' 
+            THEN 'Presencial (Balcão)'
 
-            p.valor_total, 
+        WHEN p.tipo_venda ILIKE 'delivery' 
+            THEN 'Presencial (Delivery Manual)'
 
-            fp.descricao as forma_nome, 
+        WHEN p.tipo_venda ILIKE 'local' 
+            THEN 'Presencial (Consumo Local)'
 
-            c.nome as nome_cliente, 
+        ELSE 'Presencial'
+    END as origem
 
-            CASE 
+FROM pedidos p
 
-                WHEN p.tipo_venda ILIKE 'balcao' THEN 'Presencial (Balcão)'
+JOIN formas_pagamento fp 
+    ON p.forma_pagamento_id = fp.id
 
-                WHEN p.tipo_venda ILIKE 'delivery' THEN 'Presencial (Delivery Manual)'
+LEFT JOIN clientes c 
+    ON p.cliente_id = c.id
 
-                WHEN p.tipo_venda ILIKE 'local' THEN 'Presencial (Consumo Local)'
+WHERE p.criado_em BETWEEN ? AND ?
 
-                ELSE 'Presencial'
+AND p.caixa_id IS NOT NULL
 
-            END as origem
+AND COALESCE(p.status, '') NOT ILIKE 'cancelado'
+AND COALESCE(p.situacao, '') NOT ILIKE 'cancelado'
 
-        FROM pedidos p
-
-        JOIN formas_pagamento fp ON p.forma_pagamento_id = fp.id
-
-        LEFT JOIN clientes c ON p.cliente_id = c.id
-
-        WHERE p.criado_em BETWEEN ? AND ? 
-
-        AND (p.status ILIKE 'finalizado' OR p.situacao ILIKE 'finalizado')";
-
+AND (
+    p.status ILIKE 'finalizado'
+    OR p.situacao ILIKE 'finalizado'
+)
+";
 
 
 // filtro forma pagamento
-
 if ($forma_id) {
 
     $sql .= " AND p.forma_pagamento_id = ?";
-
     $params[] = $forma_id;
-
 }
 
 
-
 // ===============================
-
-// 🔥 PARTE ONLINE (Lendo tipo_entrega)
-
+// 🔥 VENDAS ONLINE
 // ===============================
 
 if ($considerar_online === 'sim') {
 
+    $sql .= "
 
+    UNION ALL
 
-    $sql .= " UNION ALL 
+    SELECT 
+        po.id,
+        po.data_pedido,
+        po.valor_total,
+        fp2.descricao as forma_nome,
+        co.nome as nome_cliente,
 
-              SELECT 
+        'cliente_online' as tipo_cliente,
 
-                  po.id, 
+        CASE 
+            WHEN po.tipo_entrega ILIKE 'retirada'
+                THEN 'Online (Retirada)'
 
-                  po.data_pedido, 
+            ELSE 'Online (Entrega)'
+        END as origem
 
-                  po.valor_total, 
+    FROM pedidos_online po
 
-                  fp2.descricao as forma_nome, 
+    JOIN formas_pagamento fp2 
+        ON po.forma_pagamento_id = fp2.id
 
-                  co.nome as nome_cliente, 
+    LEFT JOIN clientes_online co 
+        ON po.cliente_id = co.id
 
-                  CASE 
+    WHERE po.data_pedido BETWEEN ? AND ?
 
-                     WHEN po.tipo_entrega ILIKE 'retirada' THEN 'Online (Retirada)'
+    AND po.id_caixa IS NOT NULL
 
-                     ELSE 'Online (Entrega)'
+    AND COALESCE(po.status, '') NOT ILIKE 'cancelado'
 
-                  END as origem
-
-              FROM pedidos_online po
-
-              JOIN formas_pagamento fp2 ON po.forma_pagamento_id = fp2.id
-
-              LEFT JOIN clientes_online co ON po.cliente_id = co.id
-
-              WHERE po.data_pedido BETWEEN ? AND ? 
-
-              AND po.status ILIKE 'finalizado'";
-
-
+    AND po.status ILIKE 'finalizado'
+    ";
 
     $params[] = $data_inicial . ' 00:00:00';
-
     $params[] = $data_final . ' 23:59:59';
-
 
 
     if ($forma_id) {
 
         $sql .= " AND po.forma_pagamento_id = ?";
-
         $params[] = $forma_id;
-
     }
-
 }
 
 
+// ===============================
+// ORDER
+// ===============================
 
 $sql .= " ORDER BY data_pedido DESC";
 
 
+// ===============================
+// EXECUÇÃO
+// ===============================
 
 try {
 
     $stmt = $pdo->prepare($sql);
-
     $stmt->execute($params);
 
     $vendas = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -157,22 +158,15 @@ try {
 } catch (PDOException $e) {
 
     die("Erro na consulta do relatório: " . $e->getMessage());
-
 }
 
 
-
 // ===============================
-
 // 3. TOTAIS
-
 // ===============================
 
 $total_geral = 0;
-
 $resumo = [];
-
-
 
 foreach($vendas as $v) {
 
@@ -181,112 +175,201 @@ foreach($vendas as $v) {
     $nome_f = $v['forma_nome'] ?: 'Não Informado';
 
     $resumo[$nome_f] = ($resumo[$nome_f] ?? 0) + (float)$v['valor_total'];
-
 }
 
 
-
 // ===============================
-
 // FORMAS PAGAMENTO
-
 // ===============================
 
 $todas_formas = $pdo->query("
-
     SELECT id, descricao 
-
     FROM formas_pagamento 
-
     WHERE status = 'ativo' 
-
     ORDER BY descricao ASC
-
 ")->fetchAll();
 
 ?>
 
-
-
 <!DOCTYPE html>
-
 <html lang="pt-br">
 
 <head>
 
     <meta charset="UTF-8">
-
     <title>Relatório de Vendas - Geral</title>
 
     <style>
 
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #f0f2f5; padding: 20px; color: #2d3748; }
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background-color: #f0f2f5;
+            padding: 20px;
+            color: #2d3748;
+        }
 
-        .container { max-width: 1150px; margin: auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .container {
+            max-width: 1150px;
+            margin: auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
 
-        
+        .header-flex {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
 
-        .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        .btn-voltar {
+            text-decoration: none;
+            background: #edf2f7;
+            padding: 10px 20px;
+            border-radius: 8px;
+            color: #4a5568;
+            font-weight: bold;
+            transition: 0.2s;
+        }
 
-        .btn-voltar { text-decoration: none; background: #edf2f7; padding: 10px 20px; border-radius: 8px; color: #4a5568; font-weight: bold; transition: 0.2s; }
+        .btn-voltar:hover {
+            background: #e2e8f0;
+        }
 
-        .btn-voltar:hover { background: #e2e8f0; }
+        .filtros {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+        }
 
+        .filtros label {
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #64748b;
+            margin-bottom: 5px;
+            display: block;
+        }
 
+        .filtros input,
+        .filtros select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #cbd5e0;
+            outline: none;
+        }
 
-        .filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 30px; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; }
+        .resumo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
 
-        .filtros label { font-size: 11px; font-weight: bold; text-transform: uppercase; color: #64748b; margin-bottom: 5px; display: block; }
+        .card-resumo {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            padding: 20px;
+            border-radius: 10px;
+            border-top: 4px solid #3182ce;
+        }
 
-        .filtros input, .filtros select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e0; outline: none; }
+        .card-total {
+            border-top-color: #38a169;
+            background: #f0fff4;
+        }
 
+        .card-resumo h4 {
+            margin: 0;
+            font-size: 12px;
+            color: #718096;
+            text-transform: uppercase;
+        }
 
+        .card-resumo p {
+            margin: 10px 0 0;
+            font-size: 18px;
+            font-weight: bold;
+            color: #2d3748;
+        }
 
-        .resumo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
 
-        .card-resumo { background: #fff; border: 1px solid #e2e8f0; padding: 20px; border-radius: 10px; border-top: 4px solid #3182ce; }
+        th {
+            background: #f8fafc;
+            padding: 15px;
+            text-align: left;
+            font-size: 12px;
+            color: #64748b;
+            border-bottom: 2px solid #edf2f7;
+        }
 
-        .card-total { border-top-color: #38a169; background: #f0fff4; }
+        td {
+            padding: 15px;
+            border-bottom: 1px solid #edf2f7;
+            font-size: 14px;
+        }
 
-        .card-resumo h4 { margin: 0; font-size: 12px; color: #718096; text-transform: uppercase; }
+        .badge-origem {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: bold;
+            display: inline-block;
+        }
 
-        .card-resumo p { margin: 10px 0 0; font-size: 18px; font-weight: bold; color: #2d3748; }
+        .origem-balcao {
+            background: #ebf8ff;
+            color: #3182ce;
+        }
 
+        .origem-delivery-manual {
+            background: #edf2f7;
+            color: #4a5568;
+        }
 
+        .origem-local {
+            background: #e2e8f0;
+            color: #1a202c;
+        }
 
-        table { width: 100%; border-collapse: collapse; }
+        .origem-online-entrega {
+            background: #fefcbf;
+            color: #b7791f;
+        }
 
-        th { background: #f8fafc; padding: 15px; text-align: left; font-size: 12px; color: #64748b; border-bottom: 2px solid #edf2f7; }
+        .origem-online-retirada {
+            background: #e6fffa;
+            color: #319795;
+        }
 
-        td { padding: 15px; border-bottom: 1px solid #edf2f7; font-size: 14px; }
+        .right {
+            text-align: right;
+        }
 
-        
-
-        .badge-origem { padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: bold; display: inline-block; }
-
-        .origem-balcao { background: #ebf8ff; color: #3182ce; }
-
-        .origem-delivery-manual { background: #edf2f7; color: #4a5568; }
-
-        .origem-local { background: #e2e8f0; color: #1a202c; }
-
-        .origem-online-entrega { background: #fefcbf; color: #b7791f; }
-
-        .origem-online-retirada { background: #e6fffa; color: #319795; }
-
-        
-
-        .right { text-align: right; }
-
-        @media print { .filtros, .btn-voltar { display: none; } }
+        @media print {
+            .filtros,
+            .btn-voltar {
+                display: none;
+            }
+        }
 
     </style>
 
 </head>
 
 <body>
-
-
 
 <div class="container">
 
@@ -298,28 +381,19 @@ $todas_formas = $pdo->query("
 
     </div>
 
-
-
     <form method="GET" class="filtros">
 
         <div>
-
             <label>Data Inicial</label>
-
             <input type="date" name="data_inicial" value="<?= $data_inicial ?>">
-
         </div>
 
         <div>
-
             <label>Data Final</label>
-
             <input type="date" name="data_final" value="<?= $data_final ?>">
-
         </div>
 
         <div>
-
             <label>Forma de Pagamento</label>
 
             <select name="forma_id">
@@ -328,7 +402,9 @@ $todas_formas = $pdo->query("
 
                 <?php foreach($todas_formas as $tf): ?>
 
-                    <option value="<?= $tf['id'] ?>" <?= $forma_id == $tf['id'] ? 'selected' : '' ?>><?= $tf['descricao'] ?></option>
+                    <option value="<?= $tf['id'] ?>" <?= $forma_id == $tf['id'] ? 'selected' : '' ?>>
+                        <?= $tf['descricao'] ?>
+                    </option>
 
                 <?php endforeach; ?>
 
@@ -343,7 +419,6 @@ $todas_formas = $pdo->query("
             <select name="online">
 
                 <option value="sim" <?= $considerar_online == 'sim' ? 'selected' : '' ?>>Sim</option>
-
                 <option value="nao" <?= $considerar_online == 'nao' ? 'selected' : '' ?>>Não</option>
 
             </select>
@@ -352,15 +427,23 @@ $todas_formas = $pdo->query("
 
         <div style="display: flex; align-items: flex-end; gap: 5px;">
 
-            <button type="submit" style="background:#3182ce; color:white; border:none; padding:10px; border-radius:8px; width:100%; font-weight:bold; cursor:pointer;">Filtrar</button>
+            <button type="submit"
+                style="background:#3182ce; color:white; border:none; padding:10px; border-radius:8px; width:100%; font-weight:bold; cursor:pointer;">
+                Filtrar
+            </button>
 
-            <button type="button" onclick="window.print()" style="background:#4a5568; color:white; border:none; padding:10px; border-radius:8px; cursor:pointer;">🖨️</button>
+            <button type="button"
+                onclick="window.print()"
+                style="background:#4a5568; color:white; border:none; padding:10px; border-radius:8px; cursor:pointer;">
+                🖨️
+            </button>
 
         </div>
 
     </form>
 
 
+    <!-- RESUMO -->
 
     <div class="resumo-grid">
 
@@ -370,7 +453,9 @@ $todas_formas = $pdo->query("
 
                 <h4><?= htmlspecialchars($nome) ?></h4>
 
-                <p>R$ <?= number_format($valor, 2, ',', '.') ?></p>
+                <p>
+                    R$ <?= number_format($valor, 2, ',', '.') ?>
+                </p>
 
             </div>
 
@@ -380,13 +465,16 @@ $todas_formas = $pdo->query("
 
             <h4>Faturamento Geral</h4>
 
-            <p>R$ <?= number_format($total_geral, 2, ',', '.') ?></p>
+            <p>
+                R$ <?= number_format($total_geral, 2, ',', '.') ?>
+            </p>
 
         </div>
 
     </div>
 
 
+    <!-- TABELA -->
 
     <table>
 
@@ -395,15 +483,11 @@ $todas_formas = $pdo->query("
             <tr>
 
                 <th>Data/Hora</th>
-
                 <th>Origem / Tipo</th>
-
+                <th>Tipo Cliente</th>
                 <th>Pedido</th>
-
                 <th>Cliente</th>
-
                 <th>Forma de Pagamento</th>
-
                 <th class="right">Valor Total</th>
 
             </tr>
@@ -416,7 +500,9 @@ $todas_formas = $pdo->query("
 
             <tr>
 
-                <td style="color: #718096;"><?= date('d/m/Y H:i', strtotime($v['data_pedido'])) ?></td>
+                <td style="color: #718096;">
+                    <?= date('d/m/Y H:i', strtotime($v['data_pedido'])) ?>
+                </td>
 
                 <td>
 
@@ -424,39 +510,75 @@ $todas_formas = $pdo->query("
 
                         $classe_badge = 'origem-balcao';
 
-                        if ($v['origem'] == 'Presencial (Delivery Manual)') $classe_badge = 'origem-delivery-manual';
+                        if ($v['origem'] == 'Presencial (Delivery Manual)')
+                            $classe_badge = 'origem-delivery-manual';
 
-                        if ($v['origem'] == 'Presencial (Consumo Local)') $classe_badge = 'origem-local';
+                        if ($v['origem'] == 'Presencial (Consumo Local)')
+                            $classe_badge = 'origem-local';
 
-                        if ($v['origem'] == 'Online (Entrega)') $classe_badge = 'origem-online-entrega';
+                        if ($v['origem'] == 'Online (Entrega)')
+                            $classe_badge = 'origem-online-entrega';
 
-                        if ($v['origem'] == 'Online (Retirada)') $classe_badge = 'origem-online-retirada';
+                        if ($v['origem'] == 'Online (Retirada)')
+                            $classe_badge = 'origem-online-retirada';
 
                     ?>
 
                     <span class="badge-origem <?= $classe_badge ?>">
-
                         <?= strtoupper($v['origem']) ?>
+                    </span>
+
+                </td>
+
+                <td>
+
+                    <?= $v['tipo_cliente'] == 'cliente_online'
+                        ? 'Cliente Online'
+                        : 'Cliente Presencial' ?>
+
+                </td>
+
+                <td style="font-weight: bold;">
+                    #<?= $v['id'] ?>
+                </td>
+
+                <td>
+                    <?= htmlspecialchars($v['nome_cliente'] ?: 'Consumidor Final') ?>
+                </td>
+
+                <td>
+
+                    <span style="color: #3182ce; font-weight: 500;">
+
+                        <?= htmlspecialchars($v['forma_nome']) ?>
 
                     </span>
 
                 </td>
 
-                <td style="font-weight: bold;">#<?= $v['id'] ?></td>
+                <td class="right" style="font-weight: bold;">
 
-                <td><?= htmlspecialchars($v['nome_cliente'] ?: 'Consumidor Final') ?></td>
+                    R$ <?= number_format($v['valor_total'], 2, ',', '.') ?>
 
-                <td><span style="color: #3182ce; font-weight: 500;"><?= htmlspecialchars($v['forma_nome']) ?></span></td>
-
-                <td class="right" style="font-weight: bold;">R$ <?= number_format($v['valor_total'], 2, ',', '.') ?></td>
+                </td>
 
             </tr>
 
             <?php endforeach; ?>
 
+
             <?php if(empty($vendas)): ?>
 
-                <tr><td colspan="6" style="text-align:center; padding: 50px; color: #a0aec0;">Nenhuma venda encontrada no período.</td></tr>
+                <tr>
+
+                    <td colspan="7"
+                        style="text-align:center; padding: 50px; color: #a0aec0;">
+
+                        Nenhuma venda encontrada no período.
+
+                    </td>
+
+                </tr>
 
             <?php endif; ?>
 
@@ -466,9 +588,5 @@ $todas_formas = $pdo->query("
 
 </div>
 
-
-
 </body>
-
-</html> 
-
+</html>
