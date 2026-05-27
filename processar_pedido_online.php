@@ -11,11 +11,31 @@ if (!$dados) {
 }
 
 try {
-    $pdo->beginTransaction();
+    // ==============================================================
+    // TRAVAS DE SEGURANÇA NO BACK-END (VALIDAÇÃO DOS DADOS)
+    // ==============================================================
+    
+    // 1. Tratamento e Validação do CPF
+    $cpf_limpo = preg_replace('/[^0-9]/', '', $dados['cliente_cpf'] ?? '');
+    if (strlen($cpf_limpo) !== 11) {
+        throw new Exception('O CPF deve conter exatamente 11 dígitos numéricos.');
+    }
 
-    // Limpa CPF
-    $cpf_limpo = preg_replace('/[^0-9]/', '', $dados['cliente_cpf']);
-    $cliente_id = null;
+    // 2. Tratamento e Validação do Telefone
+    $telefone_limpo = preg_replace('/[^0-9]/', '', $dados['cliente_telefone'] ?? '');
+    if (strlen($telefone_limpo) < 10 || strlen($telefone_limpo) > 11) {
+        throw new Exception('O telefone informado é inválido. Insira o DDD + Número.');
+    }
+
+    // 3. Validação do Nome (Aceita letras com acentos e espaços)
+    $nome_tratado = trim($dados['cliente_nome'] ?? '');
+    // Regex compatível com caracteres acentuados em UTF-8
+    if (empty($nome_tratado) || !preg_match('/^[A-Za-zzÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑáàâãéèêíïóôõöúçñ ]+$/u', $nome_tratado)) {
+        throw new Exception('O nome inserido é inválido. Utilize apenas letras.');
+    }
+
+    // Inicia a transação após validar as regras básicas
+    $pdo->beginTransaction();
 
     $tipo_entrega = $dados['tipo_entrega'] ?? 'entrega';
     $endereco_pedido = ($tipo_entrega === 'entrega') ? $dados['endereco_completo'] : 'Retirada no Balcão';
@@ -23,7 +43,7 @@ try {
     $taxa_entrega = ($tipo_entrega === 'entrega') ? $dados['taxa_entrega'] : 0.00;
 
     /* ==============================================================
-       1. CLIENTE (Postgres não gosta de LIMIT 1 sem ORDER BY, mas funciona)
+       1. CLIENTE
     ============================================================== */
     $stmtVerificaCli = $pdo->prepare("SELECT id FROM clientes_online WHERE cpf = ? LIMIT 1");
     $stmtVerificaCli->execute([$cpf_limpo]);
@@ -35,29 +55,28 @@ try {
         if ($tipo_entrega === 'entrega') {
             $stmtUpdateCli = $pdo->prepare("UPDATE clientes_online SET telefone = ?, endereco = ?, bairro = ? WHERE id = ?");
             $stmtUpdateCli->execute([
-                $dados['cliente_telefone'],
+                $telefone_limpo,
                 $dados['endereco_completo'],
                 $dados['bairro_entrega'],
                 $cliente_id
             ]);
         } else {
             $stmtUpdateCli = $pdo->prepare("UPDATE clientes_online SET telefone = ? WHERE id = ?");
-            $stmtUpdateCli->execute([$dados['cliente_telefone'], $cliente_id]);
+            $stmtUpdateCli->execute([$telefone_limpo, $cliente_id]);
         }
     } else {
         $endereco_cli = ($tipo_entrega === 'entrega') ? $dados['endereco_completo'] : null;
         $bairro_cli = ($tipo_entrega === 'entrega') ? $dados['bairro_entrega'] : null;
 
-        // Ajuste: Adicionado RETURNING id para garantir captura no Postgres
         $stmtInsertCli = $pdo->prepare("
             INSERT INTO clientes_online (nome, cpf, telefone, endereco, bairro)
             VALUES (?, ?, ?, ?, ?) RETURNING id
         ");
 
         $stmtInsertCli->execute([
-            $dados['cliente_nome'],
+            $nome_tratado,
             $cpf_limpo,
-            $dados['cliente_telefone'],
+            $telefone_limpo,
             $endereco_cli,
             $bairro_cli
         ]);
@@ -66,7 +85,7 @@ try {
     }
 
     /* ==============================================================
-       2. VALIDAÇÃO (Sem mudanças necessárias)
+       2. VALIDAÇÃO DA FORMA DE PAGAMENTO
     ============================================================== */
     if (!isset($dados['forma_pagamento']) || empty($dados['forma_pagamento'])) {
         throw new Exception('Forma de pagamento não informada.');
@@ -74,7 +93,7 @@ try {
     $forma_pagamento_id = filter_var($dados['forma_pagamento'], FILTER_VALIDATE_INT);
 
     /* ==============================================================
-       3. PEDIDO (Ajuste no RETURNING)
+       3. PEDIDO
     ============================================================== */
     $sqlPedido = "
         INSERT INTO pedidos_online (
@@ -100,10 +119,10 @@ try {
         ':precisa_troco' => $dados['precisa_troco'] ?? 0
     ]);
 
-    $pedido_id = $stmtPedido->fetchColumn(); // Captura o ID do RETURNING
+    $pedido_id = $stmtPedido->fetchColumn(); 
 
-    /* ==============================================================
-       4. ITENS
+/* ==============================================================
+       4. ITENS, VALIDAÇÃO DE DISPONIBILIDADE E BAIXA DE ESTOQUE
     ============================================================== */
     $sqlItem = "
         INSERT INTO pedidos_online_itens (
@@ -113,23 +132,51 @@ try {
         )
     ";
 
+    // Query para consultar o estoque atual e o nome do produto antes de vender
+    $sqlConsultaEstoque = "SELECT nome, estoque FROM produtos WHERE id = ? LIMIT 1";
+
+    // Query para subtrair a quantidade do estoque
+    $sqlEstoque = "UPDATE produtos SET estoque = estoque - :quantidade WHERE id = :produto_id";
+
     $stmtItem = $pdo->prepare($sqlItem);
+    $stmtConsultaEstoque = $pdo->prepare($sqlConsultaEstoque);
+    $stmtEstoque = $pdo->prepare($sqlEstoque);
 
     foreach ($dados['itens'] as $item) {
+        $id_produto = (int)$item['id'];
+        $qtd_comprada = (float)$item['qtd'];
+        $preco_uni = (float)$item['preco'];
+        $subtotal_item = $preco_uni * $qtd_comprada;
+
+        // 1. Busca o estoque atualizado direto no banco de dados
+        $stmtConsultaEstoque->execute([$id_produto]);
+        $prodBanco = $stmtConsultaEstoque->fetch(PDO::FETCH_ASSOC);
+
+        if (!$prodBanco) {
+            throw new Exception("Produto ID #{$id_produto} não foi encontrado no sistema.");
+        }
+
+        $estoque_atual = (float)$prodBanco['estoque'];
+        $nome_produto = $prodBanco['nome'];
+
+        // 2. TRAVA CRUCIAL: Se a quantidade pedida for maior que o estoque em estoque
+        if ($qtd_comprada > $estoque_atual) {
+            throw new Exception("Estoque insuficiente para o item '{$nome_produto}'. Temos apenas {$estoque_atual} unidades disponíveis e você tentou adicionar {$qtd_comprada}.");
+        }
+
+        // 3. Se passou pela trava, grava o item do pedido
         $stmtItem->execute([
             ':pedido_id' => $pedido_id,
-            ':produto_id' => (int)$item['id'],
-            ':quantidade' => (float)$item['qtd'],
-            ':preco_unitario' => (float)$item['preco'],
-            ':subtotal' => (float)$item['preco'] * (float)$item['qtd']
+            ':produto_id' => $id_produto,
+            ':quantidade' => $qtd_comprada,
+            ':preco_unitario' => $preco_uni,
+            ':subtotal' => $subtotal_item
+        ]);
+
+        // 4. Faz a baixa física de estoque do produto
+        $stmtEstoque->execute([
+            ':quantidade' => $qtd_comprada,
+            ':produto_id' => $id_produto
         ]);
     }
-
-    $pdo->commit();
-    echo json_encode(['sucesso' => true, 'pedido_id' => $pedido_id]);
-
-} catch (Exception $e) {
-    if ($pdo->inTransaction()) $pdo->rollBack();
-    echo json_encode(['sucesso' => false, 'erro' => $e->getMessage()]);
-}
 ?>
