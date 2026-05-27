@@ -9,10 +9,10 @@ $data_final   = $_GET['data_final']   ?? date('Y-m-d');
 $forma_id     = $_GET['forma_id']     ?? '';
 $considerar_online = $_GET['online']  ?? 'sim';
 
-// Preparação de parâmetros para as datas (Início e Fim do dia)
 $data_ini_completa = $data_inicial . ' 00:00:00';
 $data_fim_completa = $data_final . ' 23:59:59';
 
+// Inicializamos o array de parâmetros para a PARTE 1
 $params = [$data_ini_completa, $data_fim_completa];
 
 // ==============================================================
@@ -34,13 +34,11 @@ $sql = "SELECT
         JOIN formas_pagamento fp ON p.forma_pagamento_id = fp.id
         LEFT JOIN clientes c ON p.cliente_id = c.id
         WHERE p.criado_em BETWEEN ? AND ? 
-        -- TRAVA ANTI-CANCELADOS: Remove espaços e valida em minúsculo
         AND LOWER(TRIM(p.status)) <> 'cancelado'
         AND LOWER(TRIM(COALESCE(p.situacao, ''))) <> 'cancelado'
-        -- TRAVA ANTI-DUPLICIDADE: Não deixa pedidos do site vazarem na tabela local
         AND (p.origem_tipo NOT ILIKE 'Online' OR p.origem_tipo IS NULL)";
 
-// Filtro por forma de pagamento na consulta presencial
+// Se houver filtro de forma de pagamento na Parte 1, adicionamos aqui
 if ($forma_id) {
     $sql .= " AND p.forma_pagamento_id = ?";
     $params[] = $forma_id;
@@ -50,7 +48,6 @@ if ($forma_id) {
 // 🔥 PARTE 2: APENAS VENDAS DO SITE (Buscando em clientes_online)
 // ==============================================================
 if ($considerar_online === 'sim') {
-
     $sql .= " UNION ALL 
               SELECT 
                   po.id, 
@@ -66,20 +63,20 @@ if ($considerar_online === 'sim') {
               JOIN formas_pagamento fp2 ON po.forma_pagamento_id = fp2.id
               LEFT JOIN clientes_online co ON po.cliente_id = co.id
               WHERE po.data_pedido BETWEEN ? AND ? 
-              -- TRAVA ANTI-CANCELADOS ONLINE: Remove sumariamente os cancelados do site
               AND LOWER(TRIM(po.status)) <> 'cancelado'";
 
-    // Adiciona os parâmetros de data correspondentes ao UNION do ambiente online
+    // Adiciona os parâmetros de data correspondentes à Parte 2 na ordem correta do UNION
     $params[] = $data_ini_completa;
     $params[] = $data_fim_completa;
 
+    // Se houver filtro de forma de pagamento, ele se repete para a Parte 2
     if ($forma_id) {
         $sql .= " AND po.forma_pagamento_id = ?";
         $params[] = $forma_id;
     }
 }
 
-// Ordenação final aplicada sobre todo o conjunto unificado
+// Ordenação final sobre as consultas unificadas
 $sql .= " ORDER BY data_pedido DESC";
 
 try {
@@ -102,7 +99,7 @@ foreach($vendas as $v) {
     $resumo[$nome_f] = ($resumo[$nome_f] ?? 0) + (float)$v['valor_total'];
 }
 
-// Busca as formas ativas para alimentar o select do formulário
+// Busca as formas ativas para o filtro
 $todas_formas = $pdo->query("
     SELECT id, descricao 
     FROM formas_pagamento 
