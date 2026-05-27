@@ -120,22 +120,20 @@ try {
 
     $pedido_id = $stmtPedido->fetchColumn(); 
 
-    /* ==============================================================
+   /* ==============================================================
        4. ITENS, VALIDAÇÃO DE DISPONIBILIDADE E BAIXA DE ESTOQUE
     ============================================================== */
     $sqlItem = "
         INSERT INTO pedidos_online_itens (
-            pedido_id, produto_id, quantidade, preco_unitario, subtotal
+            pedido_id, produto_id, quantity, preco_unitario, subtotal
         ) VALUES (
             :pedido_id, :produto_id, :quantidade, :preco_unitario, :subtotal
         )
     ";
 
-    // AJUSTE CRUCIAL: Tratando a coluna estoque (VARCHAR do Postgres) convertendo para NUMERIC na query
-    $sqlConsultaEstoque = "SELECT nome, CAST(estoque AS NUMERIC) as estoque_num FROM produtos WHERE id = ? LIMIT 1";
-
-    // Convertemos o texto para número, fazemos o decremento, e salvamos de volta formatado como VARCHAR
-    $sqlEstoque = "UPDATE produtos SET estoque = CAST(CAST(estoque AS NUMERIC) - :quantidade AS VARCHAR) WHERE id = :produto_id";
+    // CORREÇÃO: Queries limpas para trabalhar com a coluna 'estoque' sendo INTEGER nativo
+    $sqlConsultaEstoque = "SELECT nome, estoque FROM produtos WHERE id = ? LIMIT 1";
+    $sqlEstoque = "UPDATE produtos SET estoque = estoque - :quantidade WHERE id = :produto_id";
 
     $stmtItem = $pdo->prepare($sqlItem);
     $stmtConsultaEstoque = $pdo->prepare($sqlConsultaEstoque);
@@ -147,7 +145,7 @@ try {
         $preco_uni = (float)$item['preco'];
         $subtotal_item = $preco_uni * $qtd_comprada;
 
-        // 1. Busca o estoque já tratado como número
+        // 1. Busca o estoque atualizado (agora vindo como número puro do banco)
         $stmtConsultaEstoque->execute([$id_produto]);
         $prodBanco = $stmtConsultaEstoque->fetch(PDO::FETCH_ASSOC);
 
@@ -155,15 +153,15 @@ try {
             throw new Exception("Produto ID #{$id_produto} não foi encontrado no sistema.");
         }
 
-        $estoque_atual = (float)$prodBanco['estoque_num']; // Lendo o alias numérico da query
+        $estoque_atual = (float)$prodBanco['estoque']; // Lendo a coluna nativa sem gambiarras
         $nome_produto = $prodBanco['nome'];
 
-        // 2. TRAVA DE ESTOQUE: Se tentar levar mais do que tem disponível
+        // 2. TRAVA DE ESTOQUE: Mantém a segurança se o cliente tentar abusar na quantidade
         if ($qtd_comprada > $estoque_atual) {
             throw new Exception("Estoque insuficiente para '{$nome_produto}'. Temos apenas {$estoque_atual} disponíveis e você tentou levar {$qtd_comprada}.");
         }
 
-        // 3. Insere na tabela vinculada pedidos_online_itens
+        // 3. Insere o item vinculado ao pedido
         $stmtItem->execute([
             ':pedido_id' => $pedido_id,
             ':produto_id' => $id_produto,
@@ -172,21 +170,10 @@ try {
             ':subtotal' => $subtotal_item
         ]);
 
-        // 4. Executa a movimentação da tabela produtos
+        // 4. Executa a baixa matemática direta no banco de dados
         $stmtEstoque->execute([
             ':quantidade' => $qtd_comprada,
             ':produto_id' => $id_produto
         ]);
     }
-
-    // Se todos os itens passaram pelas travas com sucesso, consolida a gravação
-    $pdo->commit();
-    echo json_encode(['sucesso' => true, 'pedido_id' => $pedido_id]);
-
-} catch (Exception $e) {
-    if (isset($pdo) && $pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
-    echo json_encode(['sucesso' => false, 'erro' => $e->getMessage()]);
-}
 ?>
