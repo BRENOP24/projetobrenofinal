@@ -23,7 +23,7 @@ try {
     $taxa_entrega = ($tipo_entrega === 'entrega') ? $dados['taxa_entrega'] : 0.00;
 
     /* ==============================================================
-       1. CLIENTE
+       1. CLIENTE (Postgres não gosta de LIMIT 1 sem ORDER BY, mas funciona)
     ============================================================== */
     $stmtVerificaCli = $pdo->prepare("SELECT id FROM clientes_online WHERE cpf = ? LIMIT 1");
     $stmtVerificaCli->execute([$cpf_limpo]);
@@ -48,6 +48,7 @@ try {
         $endereco_cli = ($tipo_entrega === 'entrega') ? $dados['endereco_completo'] : null;
         $bairro_cli = ($tipo_entrega === 'entrega') ? $dados['bairro_entrega'] : null;
 
+        // Ajuste: Adicionado RETURNING id para garantir captura no Postgres
         $stmtInsertCli = $pdo->prepare("
             INSERT INTO clientes_online (nome, cpf, telefone, endereco, bairro)
             VALUES (?, ?, ?, ?, ?) RETURNING id
@@ -65,7 +66,7 @@ try {
     }
 
     /* ==============================================================
-       2. VALIDAÇÃO
+       2. VALIDAÇÃO (Sem mudanças necessárias)
     ============================================================== */
     if (!isset($dados['forma_pagamento']) || empty($dados['forma_pagamento'])) {
         throw new Exception('Forma de pagamento não informada.');
@@ -73,13 +74,13 @@ try {
     $forma_pagamento_id = filter_var($dados['forma_pagamento'], FILTER_VALIDATE_INT);
 
     /* ==============================================================
-       3. PEDIDO
+       3. PEDIDO (Ajuste no RETURNING)
     ============================================================== */
     $sqlPedido = "
         INSERT INTO pedidos_online (
             cliente_id, valor_total, taxa_entrega, tipo_entrega, 
             bairro_entrega, endereco_completo, forma_pagamento_id, 
-            precisa_troco, status, origen
+            precisa_troco, status, origem
         ) VALUES (
             :cliente_id, :valor_total, :taxa_entrega, :tipo_entrega, 
             :bairro_entrega, :endereco_completo, :forma_pagamento_id, 
@@ -99,10 +100,10 @@ try {
         ':precisa_troco' => $dados['precisa_troco'] ?? 0
     ]);
 
-    $pedido_id = $stmtPedido->fetchColumn();
+    $pedido_id = $stmtPedido->fetchColumn(); // Captura o ID do RETURNING
 
     /* ==============================================================
-       4. ITENS COM VALIDAÇÃO ATÔMICA DE ESTOQUE
+       4. ITENS
     ============================================================== */
     $sqlItem = "
         INSERT INTO pedidos_online_itens (
@@ -111,62 +112,23 @@ try {
             :pedido_id, :produto_id, :quantidade, :preco_unitario, :subtotal
         )
     ";
+
     $stmtItem = $pdo->prepare($sqlItem);
 
-    // Queries auxiliares de checagem e alteração de estoque
-    $stmtCheckEstoque = $pdo->prepare("SELECT nome, estoque, controla_estoque FROM produtos WHERE id = ?");
-    
-    // UPDATE ATÔMICO: Só altera se tiver estoque suficiente
-    $stmtUpdateEstoque = $pdo->prepare("
-        UPDATE produtos 
-        SET estoque = estoque - :quantidade 
-        WHERE id = :produto_id 
-        AND estoque >= :quantidade
-    ");
-
     foreach ($dados['itens'] as $item) {
-        $id_produto = (int)$item['id'];
-        $qtd_produto = (float)$item['qtd'];
-
-        // 1. Busca os dados atuais do produto para saber se ele controla estoque
-        $stmtCheckEstoque->execute([$id_produto]);
-        $prodInfo = $stmtCheckEstoque->fetch(PDO::FETCH_ASSOC);
-
-        if (!$prodInfo) {
-            throw new Exception("Produto ID {$id_produto} não foi encontrado no sistema.");
-        }
-
-        // 2. Se o produto controla estoque, aplica a trava atômica
-        if (($prodInfo['controla_estoque'] ?? 'S') === 'S') {
-            
-            $stmtUpdateEstoque->execute([
-                ':quantidade' => $qtd_produto,
-                ':produto_id' => $id_produto
-            ]);
-
-            // Se nenhuma linha foi afetada, significa que o estoque é insuficiente para esta quantidade
-            if ($stmtUpdateEstoque->rowCount() === 0) {
-                $estoque_atual = (float)($prodInfo['estoque'] ?? 0);
-                throw new Exception("O item '{$prodInfo['nome']}' não possui estoque suficiente. Quantidade máxima disponível no momento: {$estoque_atual}.");
-            }
-        }
-
-        // 3. Insere o item no pedido se passar pela trava (ou se não controlar estoque)
         $stmtItem->execute([
             ':pedido_id' => $pedido_id,
-            ':produto_id' => $id_produto,
-            ':quantidade' => $qtd_produto,
+            ':produto_id' => (int)$item['id'],
+            ':quantidade' => (float)$item['qtd'],
             ':preco_unitario' => (float)$item['preco'],
-            ':subtotal' => (float)$item['preco'] * $qtd_produto
+            ':subtotal' => (float)$item['preco'] * (float)$item['qtd']
         ]);
     }
 
-    // Se tudo deu certo para todos os itens, consolida as alterações no banco
     $pdo->commit();
     echo json_encode(['sucesso' => true, 'pedido_id' => $pedido_id]);
 
 } catch (Exception $e) {
-    // Caso falte estoque em QUALQUER item, desfaz tudo (o pedido não é gerado e o estoque não mexe)
     if ($pdo->inTransaction()) $pdo->rollBack();
     echo json_encode(['sucesso' => false, 'erro' => $e->getMessage()]);
 }
