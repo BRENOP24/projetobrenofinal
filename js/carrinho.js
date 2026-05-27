@@ -114,6 +114,22 @@ async function enviarPedido() {
         return;
     }
 
+    // EXTRAÇÃO APENAS DOS NÚMEROS PARA VERIFICAÇÃO DE TAMANHO COMPLETO
+    const cpfNumeros = inputCpf.value.replace(/\D/g, '');
+    const telefoneNumeros = inputTelefone.value.replace(/\D/g, '');
+
+    // TRAVA COMPLETA DE CPF (IMPEDE VALORES CURTOS OU LONGOS)
+    if (cpfNumeros.length !== 11) {
+        alert("O CPF precisa ter exatamente 11 números. Verifique o que digitou.");
+        return;
+    }
+
+    // TRAVA COMPLETA DE TELEFONE (IMPEDE VALORES CURTOS OU LONGOS)
+    if (telefoneNumeros.length !== 11) {
+        alert("O WhatsApp precisa ter exatamente 11 números (DDD + Número). Exemplo: 11999999999");
+        return;
+    }
+
     const tipoEntrega = document.getElementById('cli-entrega').value;
     let endereco = "";
     let bairro = "";
@@ -135,9 +151,9 @@ async function enviarPedido() {
     btnFinalizar.disabled = true;
 
     const dadosPedido = {
-        cliente_cpf: inputCpf.value.replace(/\D/g, ''),
+        cliente_cpf: cpfNumeros,
         cliente_nome: inputNome.value.trim(),
-        cliente_telefone: inputTelefone.value.replace(/\D/g, ''),
+        cliente_telefone: telefoneNumeros,
         tipo_entrega: tipoEntrega,
         endereco_completo: endereco,
         bairro_entrega: bairro,
