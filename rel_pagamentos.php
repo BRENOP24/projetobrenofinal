@@ -1,6 +1,10 @@
 <?php 
 
 require_once 'config/sessao.php'; 
+
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
+
 require_once 'config/conexao.php';
 require_once 'config/funcoes.php';
 
@@ -30,11 +34,14 @@ $params = [
 // ===============================
 
 $sql = "
+
 SELECT 
     p.id,
     p.criado_em as data_pedido,
     p.valor_total,
+
     fp.descricao as forma_nome,
+
     c.nome as nome_cliente,
 
     'cliente_presencial' as tipo_cliente,
@@ -64,8 +71,6 @@ LEFT JOIN clientes c
 
 WHERE p.criado_em BETWEEN ? AND ?
 
-AND p.caixa_id IS NOT NULL
-
 AND p.status ILIKE 'finalizado'
 ";
 
@@ -92,10 +97,13 @@ if ($considerar_online === 'sim') {
     UNION ALL
 
     SELECT 
+
         po.id,
         po.data_pedido,
         po.valor_total,
+
         fp2.descricao as forma_nome,
+
         co.nome as nome_cliente,
 
         'cliente_online' as tipo_cliente,
@@ -118,8 +126,6 @@ if ($considerar_online === 'sim') {
         ON po.cliente_id = co.id
 
     WHERE po.data_pedido BETWEEN ? AND ?
-
-    AND po.id_caixa IS NOT NULL
 
     AND po.status ILIKE 'finalizado'
     ";
