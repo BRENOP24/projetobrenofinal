@@ -42,8 +42,11 @@ try {
 
         $caixa_id = $caixa['id'];
 
-        // 3. Insere no Gerenciador Oficial: pedidos
-        // Ajustado para 'delivery' para passar na regra CHECK do banco
+      // 3. Insere no Gerenciador Oficial: pedidos (AGORA DINÂMICO)
+        // Lemos o tipo original do site ('retirada' ou 'delivery')
+        $tipoVendaReal = strtolower($pedOnline['tipo_entrega']) === 'retirada' ? 'balcao' : 'delivery';
+        $origemTipoReal = strtolower($pedOnline['tipo_entrega']) === 'retirada' ? 'site_retirada' : 'delivery';
+
         $sqlInsert = "INSERT INTO pedidos (
             usuario_id, 
             caixa_id, 
@@ -56,7 +59,7 @@ try {
             endereco_entrega, 
             data_pedido,
             origem_tipo
-        ) VALUES (?, ?, ?, ?, ?, 'finalizado', 'delivery', ?, ?, NOW(), 'delivery')";
+        ) VALUES (?, ?, ?, ?, ?, 'finalizado', ?, ?, ?, NOW(), ?)";
 
         $stmtInsert = $pdo->prepare($sqlInsert);
         $stmtInsert->execute([
@@ -65,10 +68,13 @@ try {
             $pedOnline['cliente_id'] ?? null,
             $pedOnline['forma_pagamento_id'],
             $pedOnline['valor_total'],
+            $tipoVendaReal, //  Trocado de 'delivery' fixo para dinâmico (balcao ou delivery)
             $pedOnline['taxa_entrega'] ?? 0,
-            $pedOnline['endereco_completo']
+            $pedOnline['endereco_completo'],
+            $origemTipoReal //  Trocado para salvar a origem real no banco
         ]);
 
+        
         // RECUPERA O ID QUE ACABOU DE SER GERADO (Importante para os itens!)
         $id_pedido_oficial = $pdo->lastInsertId();
 
