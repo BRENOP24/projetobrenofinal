@@ -95,9 +95,21 @@ function atualizarTotalFinal() {
 }
 
 // ===============================
-// ENVIO DO PEDIDO PARA O PHP
+// ENVIO DO PEDIDO PARA O PHP (BLINDADO CONTRA DUPLICIDADE)
 // ===============================
-async function enviarPedido() {
+async function enviarPedido(event) {
+    // 1. Previne comportamentos inesperados do botão
+    if (event && event.preventDefault) {
+        event.preventDefault();
+    }
+
+    const btnFinalizar = document.getElementById('btn-finalizar');
+
+    // 2. TRAVA DE SEGURANÇA ABSOLUTA: Se o botão já foi clicado, mata a execução imediatamente
+    if (btnFinalizar && (btnFinalizar.disabled || btnFinalizar.innerText === "Processando...")) {
+        return;
+    }
+
     if (!window.carrinho || window.carrinho.length === 0) {
         alert("Seu carrinho está vazio.");
         return;
@@ -114,14 +126,11 @@ async function enviarPedido() {
         return;
     }
 
-    // ----------------------------------------------------
-    // NOVAS TRAVAS DE VALIDAÇÃO (NOME, TELEFONE E CPF)
-    // ----------------------------------------------------
+    // Travas de validação básicas do Front-end
     const nomeTratado = inputNome.value.trim();
     const cpfLimpo = inputCpf.value.replace(/\D/g, '');
     const telefoneLimpo = inputTelefone.value.replace(/\D/g, '');
 
-    // 1. Validação do Nome (Apenas letras e espaços, mínimo 3 caracteres)
     const regexNome = /^[A-Za-záàâãéèêíïóôõöúçñÁÀÂÃÉÈÍÏÓÔÕÖÚÇÑ ]+$/;
     if (!regexNome.test(nomeTratado) || nomeTratado.length < 3) {
         alert("Por favor, insira um nome válido (apenas letras, mínimo de 3 caracteres).");
@@ -129,20 +138,17 @@ async function enviarPedido() {
         return;
     }
 
-    // 2. Validação do Telefone (Geralmente 10 dígitos para fixo ou 11 para celular)
     if (telefoneLimpo.length < 10 || telefoneLimpo.length > 11) {
         alert("Por favor, insira um número de telefone válido com DDD (10 ou 11 dígitos).");
         inputTelefone.focus();
         return;
     }
 
-    // 3. Validação do CPF (Exatamente 11 dígitos numéricos)
     if (cpfLimpo.length !== 11) {
         alert("O CPF deve conter exatamente 11 números.");
         inputCpf.focus();
         return;
     }
-    // ----------------------------------------------------
 
     const tipoEntrega = document.getElementById('cli-entrega').value;
     let endereco = "";
@@ -160,9 +166,11 @@ async function enviarPedido() {
     // Chamada correta da função de valores
     const valores = atualizarTotalFinal();
 
-    const btnFinalizar = document.getElementById('btn-finalizar');
-    btnFinalizar.innerText = "Processando...";
-    btnFinalizar.disabled = true;
+    // 3. DESABILITA O BOTÃO IMEDIATAMENTE (Síncrono) antes de chamar o Servidor
+    if (btnFinalizar) {
+        btnFinalizar.innerText = "Processando...";
+        btnFinalizar.disabled = true;
+    }
 
     const dadosPedido = {
         cliente_cpf: cpfLimpo,
@@ -196,12 +204,18 @@ async function enviarPedido() {
             window.location.reload();
         } else {
             alert("Erro: " + result.erro);
-            btnFinalizar.innerText = "Confirmar Pedido";
-            btnFinalizar.disabled = false;
+            // Libera o botão novamente se houver falha tratada pelo back-end
+            if (btnFinalizar) {
+                btnFinalizar.innerText = "Confirmar Pedido";
+                btnFinalizar.disabled = false;
+            }
         }
     } catch (error) {
         alert("Erro de comunicação com o servidor.");
-        btnFinalizar.disabled = false;
+        if (btnFinalizar) {
+            btnFinalizar.innerText = "Confirmar Pedido";
+            btnFinalizar.disabled = false;
+        }
     }
 }
 
