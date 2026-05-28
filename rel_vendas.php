@@ -1,659 +1,201 @@
-<?php
-require_once 'config/sessao.php';
+<?php 
+require_once 'config/sessao.php'; 
 require_once 'config/conexao.php';
 require_once 'config/funcoes.php';
 
-// ===========================
-// FILTROS
-// ===========================
-
+// 1. Definição dos Filtros (Datas, Horas e Clientes)
 $data_inicial = $_GET['data_inicial'] ?? date('Y-m-01');
-$data_final   = $_GET['data_final'] ?? date('Y-m-t');
+$data_final   = $_GET['data_final']   ?? date('Y-m-t');
+$hora_inicial = $_GET['hora_inicial'] ?? '00:00';
+$hora_final   = $_GET['hora_final']   ?? '23:59';
+$clientes_selecionados = $_GET['clientes_ids'] ?? []; 
 
-$incluir_online      = isset($_GET['incluir_online']) ? 1 : 0;
-$modo_detalhado      = isset($_GET['detalhado']) ? 1 : 0;
-$incluir_cancelados  = isset($_GET['incluir_cancelados']) ? 1 : 0;
-$somente_finalizados = isset($_GET['somente_finalizados']) ? 1 : 0;
+// Monta o timestamp completo unindo Data + Hora:segundos
+$timestamp_inicial = $data_inicial . ' ' . $hora_inicial . ':00';
+$timestamp_final   = $data_final . ' ' . $hora_final . ':59';
 
-$inicio = $data_inicial . ' 00:00:00';
-$fim    = $data_final . ' 23:59:59';
+// 2. Construção da Query com as novas colunas e filtros de horário
+$params = [$timestamp_inicial, $timestamp_final];
+$where = "WHERE p.data_pedido BETWEEN ? AND ? 
+          AND p.situacao = 'finalizado'
+          AND p.origem_tipo IN ('balcao', 'delivery')";
 
-$dados_pagamentos = [];
-$pedidos_detalhados = [];
-
-$total_geral = 0;
-$total_quantidade = 0;
-
-// ===========================
-// QUERY BASE PEDIDOS
-// ===========================
-
-$where = "
-WHERE p.data_pedido BETWEEN ? AND ?
-AND p.origem_tipo IN ('balcao', 'delivery')
-";
-
-$params = [$inicio, $fim];
-
-if($somente_finalizados){
-    $where .= " AND LOWER(p.situacao) = 'finalizado'";
+if (!empty($clientes_selecionados)) {
+    $placeholders = implode(',', array_fill(0, count($clientes_selecionados), '?'));
+    $where .= " AND p.cliente_id IN ($placeholders)";
+    foreach($clientes_selecionados as $id) {
+        $params[] = $id;
+    }
 }
 
-if(!$incluir_cancelados){
-    $where .= " AND LOWER(p.situacao) != 'cancelado'";
-}
-
-$sql = "
-SELECT 
-    p.id,
-    p.data_pedido,
-    p.valor_total,
-    p.origem_tipo,
-    p.situacao,
-    c.nome as cliente_nome,
-    COALESCE(fp.descricao, 'Não Informado') as forma_pagamento
-FROM pedidos p
-LEFT JOIN clientes c 
-    ON p.cliente_id = c.id
-LEFT JOIN formas_pagamento fp 
-    ON p.forma_pagamento_id = fp.id
-$where
-ORDER BY fp.descricao, p.data_pedido DESC
-";
+$sql = "SELECT p.*, c.nome as nome_cliente 
+        FROM pedidos p
+        LEFT JOIN clientes c ON p.cliente_id = c.id
+        $where 
+        ORDER BY p.data_pedido DESC";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
+$vendas = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$pedidos = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// ===========================
-// PROCESSA PEDIDOS
-// ===========================
-
-foreach($pedidos as $p){
-
-    $forma = $p['forma_pagamento'];
-
-    if(!isset($dados_pagamentos[$forma])){
-        $dados_pagamentos[$forma] = [
-            'quantidade' => 0,
-            'total' => 0
-        ];
-    }
-
-    $dados_pagamentos[$forma]['quantidade']++;
-    $dados_pagamentos[$forma]['total'] += (float)$p['valor_total'];
-
-    $pedidos_detalhados[$forma][] = $p;
-
-    $total_geral += (float)$p['valor_total'];
-    $total_quantidade++;
+// Cálculos de Totais (Como a query já filtra os finalizados, basta somar direto)
+$total_vendas = 0;
+foreach($vendas as $v) { 
+    $total_vendas += (float)$v['valor_total']; 
 }
 
-// ===========================
-// PEDIDOS ONLINE
-// ===========================
-
-if($incluir_online){
-
-    $where_online = "
-    WHERE p.data_pedido BETWEEN ? AND ?
-    ";
-
-    $params_online = [$inicio, $fim];
-
-    if($somente_finalizados){
-        $where_online .= " AND LOWER(p.status) = 'finalizado'";
-    }
-
-    if(!$incluir_cancelados){
-        $where_online .= " AND LOWER(p.status) != 'cancelado'";
-    }
-
-    $sql_online = "
-    SELECT 
-        p.id,
-        p.data_pedido,
-        p.valor_total,
-        p.status as situacao,
-        'online' as origem_tipo,
-        c.nome as cliente_nome,
-        COALESCE(fp.descricao, 'Não Informado') as forma_pagamento
-    FROM pedidos_online p
-    LEFT JOIN clientes_online c 
-        ON p.cliente_id = c.id
-    LEFT JOIN formas_pagamento fp 
-        ON p.forma_pagamento_id = fp.id
-    $where_online
-    ORDER BY fp.descricao, p.data_pedido DESC
-    ";
-
-    $stmt_online = $pdo->prepare($sql_online);
-    $stmt_online->execute($params_online);
-
-    $pedidos_online = $stmt_online->fetchAll(PDO::FETCH_ASSOC);
-
-    foreach($pedidos_online as $p){
-
-        $forma = $p['forma_pagamento'];
-
-        if(!isset($dados_pagamentos[$forma])){
-            $dados_pagamentos[$forma] = [
-                'quantidade' => 0,
-                'total' => 0
-            ];
-        }
-
-        $dados_pagamentos[$forma]['quantidade']++;
-        $dados_pagamentos[$forma]['total'] += (float)$p['valor_total'];
-
-        $pedidos_detalhados[$forma][] = $p;
-
-        $total_geral += (float)$p['valor_total'];
-        $total_quantidade++;
-    }
-}
-
-// ===========================
-// ORDENA
-// ===========================
-
-uasort($dados_pagamentos, function($a, $b){
-    return $b['total'] <=> $a['total'];
-});
-
+$lista_clientes = $pdo->query("SELECT id, nome FROM clientes ORDER BY nome ASC")->fetchAll();
 ?>
 
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
+    <meta charset="UTF-8">
+    <title>Relatório de Vendas - Gestão Breno</title>
+    
+    <!-- Bibliotecas para Busca Inteligente (Select2) -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; }
+        .container { max-width: 1150px; margin: auto; background: #fff; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th { background: #f7fafc; padding: 15px; text-align: left; color: #4a5568; border-bottom: 2px solid #edf2f7; font-size: 14px; }
+        td { padding: 15px; border-bottom: 1px solid #edf2f7; color: #2d3748; font-size: 14px; }
+        
+        tbody tr:nth-child(even) { background-color: #fcfcfc; }
+        tbody tr:hover { background-color: #f1f5f9; transition: 0.2s; }
 
-<title>Relatório Financeiro</title>
+        .badge-finalizado { background: #c6f6d5; color: #22543d; padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
+        
+        .filtro-card { background: #f7fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 30px; }
+        
+        .select2-container--default .select2-selection--multiple { border: 1px solid #cbd5e0 !important; border-radius: 6px !important; min-height: 42px; }
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-
-<style>
-
-*{
-    margin:0;
-    padding:0;
-    box-sizing:border-box;
-}
-
-body{
-    background:#f4f7fb;
-    font-family:'Inter',sans-serif;
-    color:#1e293b;
-    padding:20px;
-}
-
-.container{
-    max-width:1400px;
-    margin:auto;
-}
-
-.topo{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    flex-wrap:wrap;
-    gap:15px;
-    margin-bottom:25px;
-}
-
-.topo h1{
-    font-size:28px;
-}
-
-.btn{
-    border:none;
-    border-radius:10px;
-    padding:12px 18px;
-    cursor:pointer;
-    font-weight:600;
-    text-decoration:none;
-    transition:0.2s;
-}
-
-.btn:hover{
-    transform:translateY(-2px);
-}
-
-.btn-primary{
-    background:#2563eb;
-    color:white;
-}
-
-.btn-dark{
-    background:#0f172a;
-    color:white;
-}
-
-.btn-light{
-    background:white;
-    color:#334155;
-    border:1px solid #dbe2ea;
-}
-
-.filtros{
-    background:white;
-    border-radius:20px;
-    padding:25px;
-    margin-bottom:25px;
-    box-shadow:0 10px 30px rgba(15,23,42,0.05);
-
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-    gap:18px;
-}
-
-.campo{
-    display:flex;
-    flex-direction:column;
-}
-
-.campo label{
-    font-size:12px;
-    font-weight:700;
-    margin-bottom:8px;
-    color:#64748b;
-    text-transform:uppercase;
-}
-
-.campo input{
-    height:46px;
-    border-radius:12px;
-    border:1px solid #dbe2ea;
-    padding:0 14px;
-    background:#f8fafc;
-}
-
-.check{
-    display:flex;
-    align-items:end;
-}
-
-.check label{
-    display:flex;
-    align-items:center;
-    gap:10px;
-    font-weight:600;
-    color:#334155;
-}
-
-.cards{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-    gap:20px;
-    margin-bottom:25px;
-}
-
-.card{
-    background:white;
-    border-radius:18px;
-    padding:24px;
-    box-shadow:0 10px 25px rgba(15,23,42,0.05);
-}
-
-.card h3{
-    font-size:12px;
-    text-transform:uppercase;
-    color:#64748b;
-    margin-bottom:10px;
-}
-
-.card .valor{
-    font-size:30px;
-    font-weight:700;
-}
-
-.tabela{
-    background:white;
-    border-radius:20px;
-    overflow:hidden;
-    box-shadow:0 10px 25px rgba(15,23,42,0.05);
-}
-
-.tabela-scroll{
-    overflow:auto;
-}
-
-table{
-    width:100%;
-    border-collapse:collapse;
-    min-width:900px;
-}
-
-th{
-    background:#f8fafc;
-    padding:18px;
-    text-align:left;
-    font-size:12px;
-    color:#64748b;
-    border-bottom:1px solid #e2e8f0;
-}
-
-td{
-    padding:18px;
-    border-bottom:1px solid #edf2f7;
-}
-
-tbody tr:hover{
-    background:#f8fbff;
-}
-
-.badge{
-    background:#dbeafe;
-    color:#1d4ed8;
-    padding:7px 12px;
-    border-radius:999px;
-    font-size:12px;
-    font-weight:700;
-}
-
-.valor-verde{
-    color:#16a34a;
-    font-weight:700;
-}
-
-.detalhes{
-    background:#f8fafc;
-}
-
-.total-geral{
-    margin-top:25px;
-    background:linear-gradient(135deg,#2563eb,#1d4ed8);
-    color:white;
-    padding:30px;
-    border-radius:20px;
-}
-
-.total-geral h2{
-    font-size:16px;
-    margin-bottom:10px;
-}
-
-.total-geral .numero{
-    font-size:38px;
-    font-weight:700;
-}
-
-@media(max-width:768px){
-
-    body{
-        padding:12px;
-    }
-
-    .topo h1{
-        font-size:22px;
-    }
-
-    .card .valor{
-        font-size:24px;
-    }
-
-}
-
-@media print{
-
-    .no-print{
-        display:none !important;
-    }
-
-    body{
-        background:white;
-        padding:0;
-    }
-
-}
-
-</style>
-
+        @media print {
+            form, .btn-voltar, .no-print, .select2-container { display: none !important; }
+            .container { box-shadow: none; padding: 0; max-width: 100%; }
+            body { background: #fff; }
+        }
+    </style>
 </head>
 <body>
 
 <div class="container">
-
-    <div class="topo">
-
-        <h1>💳 Relatório de Meios de Pagamento</h1>
-
-        <div style="display:flex;gap:10px;" class="no-print">
-
-            <button onclick="window.print()" class="btn btn-dark">
-                🖨️ Imprimir
-            </button>
-
-            <a href="dashboard.php" class="btn btn-light">
-                ← Voltar
-            </a>
-
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 2px solid #3182ce; padding-bottom: 10px;">
+        <h2 style="margin:0; color: #1a202c;">📈 Relatório de Vendas (Presencial & Delivery)</h2>
+        <div class="no-print">
+            <button onclick="exportarExcel()" style="background:#38a169; color:white; border:none; padding:8px 15px; border-radius:6px; font-weight:bold; cursor:pointer; margin-right:10px;">Excel 📥</button>
+            <a href="dashboard.php" class="btn-voltar" style="text-decoration:none; color:#718096; font-weight:500;">← Voltar</a>
         </div>
-
     </div>
 
-    <form method="GET" class="filtros no-print">
-
-        <div class="campo">
-            <label>Data Inicial</label>
-            <input type="date"
-                   name="data_inicial"
-                   value="<?= $data_inicial ?>">
+    <!-- Formulário com novos campos de Hora -->
+    <form method="GET" id="formFiltro" class="filtro-card" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px;">
+        <div>
+            <label style="font-size:11px; font-weight:bold; color:#718096; display:block; margin-bottom:5px;">DATA INÍCIO</label>
+            <input type="date" name="data_inicial" value="<?= $data_inicial ?>" style="width:100%; padding:10px; border-radius:6px; border:1px solid #cbd5e0;">
         </div>
-
-        <div class="campo">
-            <label>Data Final</label>
-            <input type="date"
-                   name="data_final"
-                   value="<?= $data_final ?>">
+        <div>
+            <label style="font-size:11px; font-weight:bold; color:#718096; display:block; margin-bottom:5px;">HORA INÍCIO</label>
+            <input type="time" name="hora_inicial" value="<?= $hora_inicial ?>" style="width:100%; padding:10px; border-radius:6px; border:1px solid #cbd5e0;">
         </div>
-
-        <div class="check">
-            <label>
-                <input type="checkbox"
-                       name="incluir_online"
-                       <?= $incluir_online ? 'checked' : '' ?>>
-                Incluir Online
-            </label>
+        <div>
+            <label style="font-size:11px; font-weight:bold; color:#718096; display:block; margin-bottom:5px;">DATA FIM</label>
+            <input type="date" name="data_final" value="<?= $data_final ?>" style="width:100%; padding:10px; border-radius:6px; border:1px solid #cbd5e0;">
         </div>
-
-        <div class="check">
-            <label>
-                <input type="checkbox"
-                       name="detalhado"
-                       <?= $modo_detalhado ? 'checked' : '' ?>>
-                Mostrar Detalhes
-            </label>
+        <div>
+            <label style="font-size:11px; font-weight:bold; color:#718096; display:block; margin-bottom:5px;">HORA FIM</label>
+            <input type="time" name="hora_final" value="<?= $hora_final ?>" style="width:100%; padding:10px; border-radius:6px; border:1px solid #cbd5e0;">
         </div>
-
-        <div class="check">
-            <label>
-                <input type="checkbox"
-                       name="somente_finalizados"
-                       <?= $somente_finalizados ? 'checked' : '' ?>>
-                Apenas Finalizados
-            </label>
+        <div style="grid-column: span 1; min-width: 180px;">
+            <label style="font-size:11px; font-weight:bold; color:#718096; display:block; margin-bottom:5px;">CLIENTES</label>
+            <select name="clientes_ids[]" multiple class="select-busca" style="width:100%;">
+                <?php foreach($lista_clientes as $cl): ?>
+                    <option value="<?= $cl['id'] ?>" <?= in_array($cl['id'], $clientes_selecionados) ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($cl['nome']) ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
         </div>
-
-        <div class="check">
-            <label>
-                <input type="checkbox"
-                       name="incluir_cancelados"
-                       <?= $incluir_cancelados ? 'checked' : '' ?>>
-                Incluir Cancelados
-            </label>
+        <div style="display: flex; align-items: flex-end; gap: 8px;">
+            <button type="submit" style="flex:2; height:42px; background:#3182ce; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">🔍 FILTRAR</button>
+            <button type="button" onclick="window.print()" style="flex:1; height:42px; background:#4a5568; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">🖨️</button>
         </div>
-
-        <div style="display:flex;align-items:end;">
-            <button type="submit"
-                    class="btn btn-primary"
-                    style="width:100%;">
-                🔍 Filtrar
-            </button>
-        </div>
-
     </form>
 
-    <div class="cards">
+    <table id="tabelaVendas">
+        <thead>
+            <tr>
+                <th>Data / Hora</th>
+                <th>Cód. Pedido</th>
+                <th>Cliente</th>
+                <th>Tipo Origem</th>
+                <th>Valor Total</th>
+                <th style="text-align:center;">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php if(empty($vendas)): ?>
+                <tr><td colspan="6" style="text-align:center; padding:30px; color:#718096;">Nenhuma venda encontrada para os critérios selecionados.</td></tr>
+            <?php endif; ?>
 
-        <div class="card">
-            <h3>Total Faturado</h3>
-            <div class="valor">
-                R$ <?= number_format($total_geral, 2, ',', '.') ?>
-            </div>
-        </div>
-
-        <div class="card">
-            <h3>Quantidade Pedidos</h3>
-            <div class="valor">
-                <?= $total_quantidade ?>
-            </div>
-        </div>
-
-        <div class="card">
-            <h3>Meios Pagamento</h3>
-            <div class="valor">
-                <?= count($dados_pagamentos) ?>
-            </div>
-        </div>
-
-    </div>
-
-    <div class="tabela">
-
-        <div class="tabela-scroll">
-
-            <table>
-
-                <thead>
-                    <tr>
-                        <th>Forma Pagamento</th>
-                        <th>Quantidade</th>
-                        <th>Total</th>
-                        <th>%</th>
-                    </tr>
-                </thead>
-
-                <tbody>
-
-                <?php foreach($dados_pagamentos as $forma => $dados):
-
-                    $percentual = $total_geral > 0
-                        ? ($dados['total'] / $total_geral) * 100
-                        : 0;
-
-                ?>
-
-                    <tr>
-
-                        <td>
-                            <strong><?= htmlspecialchars($forma) ?></strong>
-                        </td>
-
-                        <td>
-                            <span class="badge">
-                                <?= $dados['quantidade'] ?> vendas
-                            </span>
-                        </td>
-
-                        <td class="valor-verde">
-                            R$ <?= number_format($dados['total'], 2, ',', '.') ?>
-                        </td>
-
-                        <td>
-                            <?= number_format($percentual, 2, ',', '.') ?>%
-                        </td>
-
-                    </tr>
-
-                    <?php if($modo_detalhado && isset($pedidos_detalhados[$forma])): ?>
-
-                    <tr class="detalhes">
-
-                        <td colspan="4">
-
-                            <table style="width:100%;">
-
-                                <thead>
-                                    <tr>
-                                        <th>Pedido</th>
-                                        <th>Data</th>
-                                        <th>Cliente</th>
-                                        <th>Origem</th>
-                                        <th>Status</th>
-                                        <th>Valor</th>
-                                    </tr>
-                                </thead>
-
-                                <tbody>
-
-                                <?php foreach($pedidos_detalhados[$forma] as $pedido): ?>
-
-                                    <tr>
-
-                                        <td>
-                                            #<?= str_pad($pedido['id'], 5, '0', STR_PAD_LEFT) ?>
-                                        </td>
-
-                                        <td>
-                                            <?= date('d/m/Y H:i', strtotime($pedido['data_pedido'])) ?>
-                                        </td>
-
-                                        <td>
-                                            <?= htmlspecialchars($pedido['cliente_nome'] ?: 'Consumidor Final') ?>
-                                        </td>
-
-                                        <td style="text-transform:capitalize;">
-                                            <?= htmlspecialchars($pedido['origem_tipo']) ?>
-                                        </td>
-
-                                        <td>
-                                            <?= htmlspecialchars($pedido['situacao']) ?>
-                                        </td>
-
-                                        <td class="valor-verde">
-                                            R$ <?= number_format($pedido['valor_total'], 2, ',', '.') ?>
-                                        </td>
-
-                                    </tr>
-
-                                <?php endforeach; ?>
-
-                                </tbody>
-
-                            </table>
-
-                        </td>
-
-                    </tr>
-
-                    <?php endif; ?>
-
-                <?php endforeach; ?>
-
-                </tbody>
-
-            </table>
-
-        </div>
-
-    </div>
-
-    <div class="total-geral">
-
-        <h2>FATURAMENTO TOTAL DO PERÍODO</h2>
-
-        <div class="numero">
-            R$ <?= number_format($total_geral, 2, ',', '.') ?>
-        </div>
-
-    </div>
-
+            <?php foreach($vendas as $v): ?>
+            <tr>
+                <td><?= date('d/m/Y H:i', strtotime($v['data_pedido'])) ?></td>
+                <td><strong>#<?= str_pad($v['id'], 5, '0', STR_PAD_LEFT) ?></strong></td>
+                <td><?= htmlspecialchars($v['nome_cliente'] ?: 'Consumidor Final') ?></td>
+                <td style="text-transform: capitalize;"><?= htmlspecialchars($v['origem_tipo']) ?></td>
+                <td style="font-weight:bold;">R$ <?= number_format($v['valor_total'], 2, ',', '.') ?></td>
+                <td style="text-align:center;"><span class="badge-finalizado">Finalizado</span></td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+        <tfoot>
+            <tr style="background: #f7fafc;">
+                <td colspan="4" style="text-align:right; font-weight:bold; padding:20px;">TOTAL EM VENDAS BALCÃO/DELIVERY:</td>
+                <td colspan="2" style="font-weight:bold; color:#38a169; font-size:18px; padding:20px;">R$ <?= number_format($total_vendas, 2, ',', '.') ?></td>
+            </tr>
+        </tfoot>
+    </table>
 </div>
+
+<script>
+$(document).ready(function() {
+    $('.select-busca').select2({
+        placeholder: " Procure por nomes...",
+        allowClear: true
+    });
+});
+
+function exportarExcel() {
+    let csv = [];
+    let rows = document.querySelectorAll("table tr");
+    
+    for (let i = 0; i < rows.length; i++) {
+        let row = [], cols = rows[i].querySelectorAll("td, th");
+        for (let j = 0; j < cols.length; j++) {
+            let data = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, "").replace(/,/g, ".");
+            row.push(data);
+        }
+        csv.push(row.join(";"));
+    }
+
+    let csv_string = csv.join("\n");
+    let filename = 'relatorio_vendas_' + new Date().toLocaleDateString() + '.csv';
+    let link = document.createElement("a");
+    link.style.display = 'none';
+    link.setAttribute('target', '_blank');
+    link.setAttribute('href', 'data:text/csv;charset=utf-8,%EF%BB%BF' + encodeURIComponent(csv_string));
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+</script>
 
 </body>
 </html>
