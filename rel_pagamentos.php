@@ -10,7 +10,6 @@ require_once 'config/funcoes.php';
 $data_inicial = $_GET['data_inicial'] ?? date('Y-m-01\T00:00');
 $data_final   = $_GET['data_final']   ?? date('Y-m-t\T23:59');
 
-// Mudança para Select dinâmico (padrão: sim)
 $incluir_online      = ($_GET['incluir_online'] ?? 'sim') === 'sim' ? 1 : 0;
 $modo_detalhado      = isset($_GET['detalhado']) ? 1 : 0;
 $incluir_cancelados  = isset($_GET['incluir_cancelados']) ? 1 : 0;
@@ -26,7 +25,7 @@ $total_geral = 0;
 $total_quantidade = 0;
 
 // ===========================
-// QUERY BASE PEDIDOS
+// QUERY BASE PEDIDOS (LOCAL)
 // ===========================
 
 $where = "
@@ -54,30 +53,22 @@ SELECT
     c.nome as cliente_nome,
     COALESCE(fp.descricao, 'Não Informado') as forma_pagamento
 FROM pedidos p
-LEFT JOIN clientes c 
-    ON p.cliente_id = c.id
-LEFT JOIN formas_pagamento fp 
-    ON p.forma_pagamento_id = fp.id
+LEFT JOIN clientes c ON p.cliente_id = c.id
+LEFT JOIN formas_pagamento fp ON p.forma_pagamento_id = fp.id
 $where
 ORDER BY fp.descricao, p.data_pedido DESC
 ";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
-
 $pedidos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// ===========================
 // PROCESSA PEDIDOS LOCAL
-// ===========================
 foreach($pedidos as $p){
     $forma = $p['forma_pagamento'];
 
     if(!isset($dados_pagamentos[$forma])){
-        $dados_pagamentos[$forma] = [
-            'quantidade' => 0,
-            'total' => 0
-        ];
+        $dados_pagamentos[$forma] = ['quantidade' => 0, 'total' => 0];
     }
 
     $dados_pagamentos[$forma]['quantidade']++;
@@ -89,7 +80,7 @@ foreach($pedidos as $p){
 }
 
 // ===========================
-// PEDIDOS ONLINE
+// PEDIDOS ONLINE (CORRIGIDO CONFORME O BANCO)
 // ===========================
 if($incluir_online){
 
@@ -99,6 +90,7 @@ if($incluir_online){
 
     $params_online = [$inicio, $fim];
 
+    // No online a coluna do banco chama-se 'status' (visto no print 2)
     if($somente_finalizados){
         $where_online .= " AND LOWER(p.status) = 'finalizado'";
     }
@@ -107,20 +99,19 @@ if($incluir_online){
         $where_online .= " AND LOWER(p.status) != 'cancelado'";
     }
 
+    // CORREÇÃO AQUI: p.origem em vez de p.origem_tipo
     $sql_online = "
     SELECT 
         p.id,
         p.data_pedido,
         p.valor_total,
         p.status as situacao,
-        'Site' as origen_tipo, 
+        p.origem as origem_tipo, 
         co.nome as cliente_nome,
         COALESCE(fp.descricao, 'Não Informado') as forma_pagamento
     FROM pedidos_online p
-    LEFT JOIN clientes_online co 
-        ON p.cliente_id = co.id
-    LEFT JOIN formas_pagamento fp 
-        ON p.forma_pagamento_id = fp.id
+    LEFT JOIN clientes_online co ON p.cliente_id = co.id
+    LEFT JOIN formas_pagamento fp ON p.forma_pagamento_id = fp.id
     $where_online
     ORDER BY fp.descricao, p.data_pedido DESC
     ";
@@ -130,13 +121,11 @@ if($incluir_online){
     $pedidos_online = $stmt_online->fetchAll(PDO::FETCH_ASSOC);
 
     foreach($pedidos_online as $p){
+        // Evita que IDs iguais entre local e online substituam ou dupliquem registros erroneamente
         $forma = $p['forma_pagamento'];
 
         if(!isset($dados_pagamentos[$forma])){
-            $dados_pagamentos[$forma] = [
-                'quantidade' => 0,
-                'total' => 0
-            ];
+            $dados_pagamentos[$forma] = ['quantidade' => 0, 'total' => 0];
         }
 
         $dados_pagamentos[$forma]['quantidade']++;
@@ -148,9 +137,7 @@ if($incluir_online){
     }
 }
 
-// ===========================
 // ORDENA POR FATURAMENTO
-// ===========================
 uasort($dados_pagamentos, function($a, $b){
     return $b['total'] <=> $a['total'];
 });
@@ -178,7 +165,6 @@ body{ background:#f4f7fb; font-family:'Inter',sans-serif; color:#1e293b; padding
 .btn-dark{ background:#0f172a; color:white; }
 .btn-light{ background:white; color:#334155; border:1px solid #dbe2ea; }
 
-/* Filtros Estilizados */
 .filtros{ background:white; border-radius:16px; padding:25px; margin-bottom:25px; box-shadow:0 10px 30px rgba(15,23,42,0.04); display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:18px; border: 1px solid #e2e8f0; }
 .campo{ display:flex; flex-direction:column; }
 .campo label{ font-size:11px; font-weight:700; margin-bottom:8px; color:#64748b; text-transform:uppercase; letter-spacing: 0.5px; }
@@ -189,7 +175,6 @@ body{ background:#f4f7fb; font-family:'Inter',sans-serif; color:#1e293b; padding
 .check-item { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; color: #334155; cursor: pointer; }
 .check-item input { width: 18px; height: 18px; cursor: pointer; accent-color: #2563eb; }
 
-/* Cards Dashboard */
 .cards{ display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px; margin-bottom:25px; }
 .card{ background:white; border-radius:16px; padding:24px; box-shadow:0 10px 25px rgba(15,23,42,0.03); border: 1px solid #e2e8f0; position: relative; overflow: hidden; }
 .card::before { content: ''; position: absolute; top:0; left:0; width:4px; height:100%; background:#2563eb; }
@@ -197,7 +182,6 @@ body{ background:#f4f7fb; font-family:'Inter',sans-serif; color:#1e293b; padding
 .card h3{ font-size:11px; text-transform:uppercase; color:#64748b; margin-bottom:8px; letter-spacing: 0.5px; }
 .card .valor{ font-size:28px; font-weight:700; color: #0f172a; }
 
-/* Tabelas */
 .tabela{ background:white; border-radius:16px; overflow:hidden; box-shadow:0 10px 25px rgba(15,23,42,0.03); border: 1px solid #e2e8f0; }
 .tabela-scroll{ overflow:auto; }
 table{ width:100%; border-collapse:collapse; min-width:900px; }
@@ -223,11 +207,6 @@ tbody tr:hover{ background:#f8fbff; }
     .topo h1{ font-size:20px; }
     .card .valor{ font-size:22px; }
     .total-geral { flex-direction: column; align-items: flex-start; gap: 10px; }
-}
-@media print{
-    .no-print{ display:none !important; }
-    body{ background:white; padding:0; }
-    .tabela { border: none; box-shadow: none; }
 }
 </style>
 </head>
@@ -334,17 +313,19 @@ tbody tr:hover{ background:#f8fbff; }
                                     </tr>
                                 </thead>
                                 <tbody>
-                                <?php foreach($pedidos_detalhados[$forma] as $pedido): ?>
+                                <?php foreach($pedidos_detalhados[$forma] as $pedido): 
+                                    $origem_nome = $pedido['origem_tipo'] ?? 'Não Informado';
+                                ?>
                                     <tr>
                                         <td>#<?= str_pad($pedido['id'], 5, '0', STR_PAD_LEFT) ?></td>
                                         <td><?= date('d/m/Y H:i', strtotime($pedido['data_pedido'])) ?></td>
                                         <td><?= htmlspecialchars($pedido['cliente_nome'] ?: 'Consumidor Final') ?></td>
                                         <td>
-                                            <span class="badge-origem <?= strtolower($pedido['origem_tipo']) === 'site' ? 'origem-site' : '' ?>">
-                                                <?= htmlspecialchars($pedido['origem_tipo']) ?>
+                                            <span class="badge-origem <?= strtolower($origem_nome) === 'site' ? 'origem-site' : '' ?>">
+                                                <?= htmlspecialchars($origem_nome) ?>
                                             </span>
                                         </td>
-                                        <td><?= htmlspecialchars($pedido['situacao']) ?></td>
+                                        <td><?= htmlspecialchars($pedido['situacao'] ?? 'Misto') ?></td>
                                         <td class="valor-verde" style="text-align: right;">R$ <?= number_format($pedido['valor_total'], 2, ',', '.') ?></td>
                                     </tr>
                                 <?php endforeach; ?>
