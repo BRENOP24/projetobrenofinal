@@ -42,10 +42,11 @@ try {
 
         $caixa_id = $caixa['id'];
 
-      // 3. Insere no Gerenciador Oficial: pedidos (AGORA DINÂMICO)
-        // Lemos o tipo original do site ('retirada' ou 'delivery')
+    // 3. Insere no Gerenciador Oficial: pedidos (Formatado para passar na Constraint)
         $tipoVendaReal = strtolower($pedOnline['tipo_entrega']) === 'retirada' ? 'balcao' : 'delivery';
-        $origemTipoReal = strtolower($pedOnline['tipo_entrega']) === 'retirada' ? 'site_retirada' : 'delivery';
+        
+        // Mantemos 'site' para o relatório identificar o canal corretamente
+        $origemTipoReal = strtolower($pedOnline['tipo_entrega']) === 'retirada' ? 'site' : 'delivery';
 
         $sqlInsert = "INSERT INTO pedidos (
             usuario_id, 
@@ -68,10 +69,10 @@ try {
             $pedOnline['cliente_id'] ?? null,
             $pedOnline['forma_pagamento_id'],
             $pedOnline['valor_total'],
-            $tipoVendaReal, //  Trocado de 'delivery' fixo para dinâmico (balcao ou delivery)
+            $tipoVendaReal,       // Salva 'balcao' se for retirada, evitando o 'delivery' forçado
             $pedOnline['taxa_entrega'] ?? 0,
-            $pedOnline['endereco_completo'],
-            $origemTipoReal //  Trocado para salvar a origem real no banco
+            $pedOnline['endereco_completo'] ?? 'Retirada no Balcão',
+            $origemTipoReal       // Gravando 'site' ou 'delivery' limpo para não estourar a constraint
         ]);
 
         
