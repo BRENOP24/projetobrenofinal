@@ -6,7 +6,7 @@ require_once 'config/conexao.php';
 $data_inicio = $_GET['data_inicio'] ?? date('Y-m-d');
 $data_fim    = $_GET['data_fim']    ?? date('Y-m-d');
 $busca       = $_GET['busca']       ?? '';
-$origem      = $_GET['origem']      ?? 'TODOS'; // Novo filtro de origem
+$origem      = $_GET['origem']      ?? 'TODOS'; // Filtro de origem
 
 // Parâmetros base da query
 $params = [
@@ -49,14 +49,14 @@ if ($origem === 'TODOS' || $origem === 'ONLINE') {
         SELECT 
             po.id,
             po.data_pedido,
-            COALESCE(c.nome, 'Consumidor') AS cliente_nome,
-            COALESCE(c.cpf_cnpj, '-') AS cpf_cnpj,
+            COALESCE(co.nome, 'Consumidor') AS cliente_nome,
+            COALESCE(co.cpf, '-') AS cpf_cnpj, --  CORRIGIDO: lendo a coluna real 'cpf' do site
             f.descricao AS pagamento,
             po.valor_total,
             po.tipo_entrega AS tipo,
             'ONLINE' AS origem
         FROM pedidos_online po
-        LEFT JOIN clientes c ON po.cliente_id = c.id
+        LEFT JOIN clientes_online co ON po.cliente_id = co.id -- Apontando para clientes_online
         LEFT JOIN formas_pagamento f ON po.forma_pagamento_id = f.id
         WHERE po.data_pedido BETWEEN :inicio AND :fim
     ";
@@ -72,7 +72,7 @@ if ($origem === 'TODOS' || $origem === 'ONLINE') {
 // Junta as queries que fazem sentido para o filtro atual
 $sql_final = "SELECT * FROM ( " . implode(" UNION ALL ", $subqueries) . " ) AS pedidos_geral WHERE 1=1";
 
-// Filtro de texto (Nome ou CPF)
+// Filtro de texto na barra de busca (Nome ou CPF)
 if (!empty($busca)) {
     $sql_final .= " AND (
         cliente_nome LIKE :busca
@@ -104,7 +104,6 @@ $pedidos = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <a href="dashboard.php" class="btn btn-outline-secondary"><i class="fas fa-home"></i> Voltar ao Painel</a>
     </div>
 
-    <!-- Filtros -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-body">
             <form method="GET" class="row g-3">
@@ -135,7 +134,6 @@ $pedidos = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <!-- Tabela -->
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
@@ -171,7 +169,6 @@ $pedidos = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <td><?= htmlspecialchars($p['pagamento'] ?? 'Não informado') ?></td>
                             <td class="text-end fw-bold text-success">R$ <?= number_format($p['valor_total'], 2, ',', '.') ?></td>
                             <td class="text-center">
-                                <!-- Passando o ID e a Origem para o arquivo de impressão saber de onde puxar -->
                                 <button onclick="window.open('imprimir_pedido.php?id=<?= $p['id'] ?>&origem=<?= $p['origem'] ?>', '_blank')" class="btn btn-sm btn-outline-secondary">
                                     <i class="fas fa-print"></i> Reimprimir
                                 </button>
