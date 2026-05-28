@@ -673,7 +673,7 @@ body{
                 Retirar na Loja
             </option>
 
-        </select>
+            </select>
 
         <div id="box-endereco">
 
@@ -767,7 +767,7 @@ body{
         </div>
 
         <button
-            onclick="enviarPedido()"
+            onclick="enviarPedido(event)"
             id="btn-finalizar"
             style="
                 width:100%;
