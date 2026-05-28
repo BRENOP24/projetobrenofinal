@@ -4,19 +4,21 @@ require_once 'config/conexao.php';
 require_once 'config/funcoes.php';
 
 // ===========================
-// FILTROS
+// FILTROS (Com suporte a Horários)
 // ===========================
 
-$data_inicial = $_GET['data_inicial'] ?? date('Y-m-01');
-$data_final   = $_GET['data_final'] ?? date('Y-m-t');
+// Define o padrão com data E HORA se não vierem na URL
+$data_inicial = $_GET['data_inicial'] ?? date('Y-m-01\T00:00');
+$data_final   = $_GET['data_final']   ?? date('Y-m-t\T23:59');
 
 $incluir_online      = isset($_GET['incluir_online']) ? 1 : 0;
 $modo_detalhado      = isset($_GET['detalhado']) ? 1 : 0;
 $incluir_cancelados  = isset($_GET['incluir_cancelados']) ? 1 : 0;
 $somente_finalizados = isset($_GET['somente_finalizados']) ? 1 : 0;
 
-$inicio = $data_inicial . ' 00:00:00';
-$fim    = $data_final . ' 23:59:59';
+// Converte os formatos recebidos do HTML para o formato do Banco de Dados (Y-m-d H:i:s)
+$inicio = date('Y-m-d H:i:s', strtotime($data_inicial));
+$fim    = date('Y-m-d H:i:s', strtotime($data_final));
 
 $dados_pagamentos = [];
 $pedidos_detalhados = [];
@@ -177,7 +179,6 @@ uasort($dados_pagamentos, function($a, $b){
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
 <style>
-
 *{
     margin:0;
     padding:0;
@@ -247,7 +248,7 @@ body{
     box-shadow:0 10px 30px rgba(15,23,42,0.05);
 
     display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
     gap:18px;
 }
 
@@ -270,6 +271,8 @@ body{
     border:1px solid #dbe2ea;
     padding:0 14px;
     background:#f8fafc;
+    font-family: inherit;
+    color: #334155;
 }
 
 .check{
@@ -283,6 +286,7 @@ body{
     gap:10px;
     font-weight:600;
     color:#334155;
+    cursor: pointer;
 }
 
 .cards{
@@ -383,34 +387,15 @@ tbody tr:hover{
 }
 
 @media(max-width:768px){
-
-    body{
-        padding:12px;
-    }
-
-    .topo h1{
-        font-size:22px;
-    }
-
-    .card .valor{
-        font-size:24px;
-    }
-
+    body{ padding:12px; }
+    .topo h1{ font-size:22px; }
+    .card .valor{ font-size:24px; }
 }
 
 @media print{
-
-    .no-print{
-        display:none !important;
-    }
-
-    body{
-        background:white;
-        padding:0;
-    }
-
+    .no-print{ display:none !important; }
+    body{ background:white; padding:0; }
 }
-
 </style>
 
 </head>
@@ -419,43 +404,34 @@ tbody tr:hover{
 <div class="container">
 
     <div class="topo">
-
         <h1>💳 Relatório de Meios de Pagamento</h1>
-
         <div style="display:flex;gap:10px;" class="no-print">
-
-            <button onclick="window.print()" class="btn btn-dark">
-                🖨️ Imprimir
-            </button>
-
-            <a href="dashboard.php" class="btn btn-light">
-                ← Voltar
-            </a>
-
+            <button onclick="window.print()" class="btn btn-dark">🖨️ Imprimir</button>
+            <a href="dashboard.php" class="btn btn-light">← Voltar</a>
         </div>
-
     </div>
 
     <form method="GET" class="filtros no-print">
 
         <div class="campo">
-            <label>Data Inicial</label>
-            <input type="date"
+            <label>Início (Data e Hora)</label>
+            <input type="datetime-local"
                    name="data_inicial"
-                   value="<?= $data_inicial ?>">
+                   value="<?= htmlspecialchars($data_inicial) ?>">
         </div>
 
         <div class="campo">
-            <label>Data Final</label>
-            <input type="date"
+            <label>Fim (Data e Hora)</label>
+            <input type="datetime-local"
                    name="data_final"
-                   value="<?= $data_final ?>">
+                   value="<?= htmlspecialchars($data_final) ?>">
         </div>
 
         <div class="check">
             <label>
                 <input type="checkbox"
                        name="incluir_online"
+                       value="1"
                        <?= $incluir_online ? 'checked' : '' ?>>
                 Incluir Online
             </label>
@@ -465,6 +441,7 @@ tbody tr:hover{
             <label>
                 <input type="checkbox"
                        name="detalhado"
+                       value="1"
                        <?= $modo_detalhado ? 'checked' : '' ?>>
                 Mostrar Detalhes
             </label>
@@ -474,6 +451,7 @@ tbody tr:hover{
             <label>
                 <input type="checkbox"
                        name="somente_finalizados"
+                       value="1"
                        <?= $somente_finalizados ? 'checked' : '' ?>>
                 Apenas Finalizados
             </label>
@@ -483,52 +461,38 @@ tbody tr:hover{
             <label>
                 <input type="checkbox"
                        name="incluir_cancelados"
+                       value="1"
                        <?= $incluir_cancelados ? 'checked' : '' ?>>
                 Incluir Cancelados
             </label>
         </div>
 
         <div style="display:flex;align-items:end;">
-            <button type="submit"
-                    class="btn btn-primary"
-                    style="width:100%;">
-                🔍 Filtrar
-            </button>
+            <button type="submit" class="btn btn-primary" style="width:100%;">🔍 Filtrar</button>
         </div>
 
     </form>
 
     <div class="cards">
-
         <div class="card">
             <h3>Total Faturado</h3>
-            <div class="valor">
-                R$ <?= number_format($total_geral, 2, ',', '.') ?>
-            </div>
+            <div class="valor">R$ <?= number_format($total_geral, 2, ',', '.') ?></div>
         </div>
 
         <div class="card">
             <h3>Quantidade Pedidos</h3>
-            <div class="valor">
-                <?= $total_quantidade ?>
-            </div>
+            <div class="valor"><?= $total_quantidade ?></div>
         </div>
 
         <div class="card">
             <h3>Meios Pagamento</h3>
-            <div class="valor">
-                <?= count($dados_pagamentos) ?>
-            </div>
+            <div class="valor"><?= count($dados_pagamentos) ?></div>
         </div>
-
     </div>
 
     <div class="tabela">
-
         <div class="tabela-scroll">
-
             <table>
-
                 <thead>
                     <tr>
                         <th>Forma Pagamento</th>
@@ -537,120 +501,58 @@ tbody tr:hover{
                         <th>%</th>
                     </tr>
                 </thead>
-
                 <tbody>
 
-                <?php foreach($dados_pagamentos as $forma => $dados):
-
-                    $percentual = $total_geral > 0
-                        ? ($dados['total'] / $total_geral) * 100
-                        : 0;
-
+                <?php foreach($dados_pagamentos as $forma => $dados): 
+                    $percentual = $total_geral > 0 ? ($dados['total'] / $total_geral) * 100 : 0;
                 ?>
-
                     <tr>
-
-                        <td>
-                            <strong><?= htmlspecialchars($forma) ?></strong>
-                        </td>
-
-                        <td>
-                            <span class="badge">
-                                <?= $dados['quantidade'] ?> vendas
-                            </span>
-                        </td>
-
-                        <td class="valor-verde">
-                            R$ <?= number_format($dados['total'], 2, ',', '.') ?>
-                        </td>
-
-                        <td>
-                            <?= number_format($percentual, 2, ',', '.') ?>%
-                        </td>
-
+                        <td><strong><?= htmlspecialchars($forma) ?></strong></td>
+                        <td><span class="badge"><?= $dados['quantidade'] ?> vendas</span></td>
+                        <td class="valor-verde">R$ <?= number_format($dados['total'], 2, ',', '.') ?></td>
+                        <td><?= number_format($percentual, 2, ',', '.') ?>%</td>
                     </tr>
 
                     <?php if($modo_detalhado && isset($pedidos_detalhados[$forma])): ?>
-
                     <tr class="detalhes">
-
                         <td colspan="4">
-
                             <table style="width:100%;">
-
                                 <thead>
                                     <tr>
                                         <th>Pedido</th>
-                                        <th>Data</th>
+                                        <th>Data/Hora</th>
                                         <th>Cliente</th>
                                         <th>Origem</th>
                                         <th>Status</th>
                                         <th>Valor</th>
                                     </tr>
                                 </thead>
-
                                 <tbody>
-
                                 <?php foreach($pedidos_detalhados[$forma] as $pedido): ?>
-
                                     <tr>
-
-                                        <td>
-                                            #<?= str_pad($pedido['id'], 5, '0', STR_PAD_LEFT) ?>
-                                        </td>
-
-                                        <td>
-                                            <?= date('d/m/Y H:i', strtotime($pedido['data_pedido'])) ?>
-                                        </td>
-
-                                        <td>
-                                            <?= htmlspecialchars($pedido['cliente_nome'] ?: 'Consumidor Final') ?>
-                                        </td>
-
-                                        <td style="text-transform:capitalize;">
-                                            <?= htmlspecialchars($pedido['origem_tipo']) ?>
-                                        </td>
-
-                                        <td>
-                                            <?= htmlspecialchars($pedido['situacao']) ?>
-                                        </td>
-
-                                        <td class="valor-verde">
-                                            R$ <?= number_format($pedido['valor_total'], 2, ',', '.') ?>
-                                        </td>
-
+                                        <td>#<?= str_pad($pedido['id'], 5, '0', STR_PAD_LEFT) ?></td>
+                                        <td><?= date('d/m/Y H:i', strtotime($pedido['data_pedido'])) ?></td>
+                                        <td><?= htmlspecialchars($pedido['cliente_nome'] ?: 'Consumidor Final') ?></td>
+                                        <td style="text-transform:capitalize;"><?= htmlspecialchars($pedido['origem_tipo']) ?></td>
+                                        <td><?= htmlspecialchars($pedido['situacao']) ?></td>
+                                        <td class="valor-verde">R$ <?= number_format($pedido['valor_total'], 2, ',', '.') ?></td>
                                     </tr>
-
                                 <?php endforeach; ?>
-
                                 </tbody>
-
                             </table>
-
                         </td>
-
                     </tr>
-
                     <?php endif; ?>
-
                 <?php endforeach; ?>
 
                 </tbody>
-
             </table>
-
         </div>
-
     </div>
 
     <div class="total-geral">
-
         <h2>FATURAMENTO TOTAL DO PERÍODO</h2>
-
-        <div class="numero">
-            R$ <?= number_format($total_geral, 2, ',', '.') ?>
-        </div>
-
+        <div class="numero">R$ <?= number_format($total_geral, 2, ',', '.') ?></div>
     </div>
 
 </div>
