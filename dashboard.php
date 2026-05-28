@@ -218,6 +218,7 @@ if ($_SESSION['nivel'] === 'garcom') {
                         <li><a href="rel_vendas.php" target="conteudo">📈 Vendas Período</a></li>
                         <li><a href="rel_pedidos_online.php" target="conteudo">📈 Vendas Online</a></li>
                         <li><a href="rel_estoque.php" target="conteudo">📦 Posição Estoque</a></li>
+                        <li><a href="itens_online_venda..php" target="conteudo">📦 Estoque Vendas Online</a></li>
                         <li><a href="rel_financeiro_geral.php" target="conteudo">💸 Resumo (DRE)</a></li>
                         <li><a href="rel_curva.php" target="conteudo">👥 Curva ABC</a></li>
                         <li><a href="rel_pagamentos.php" target="conteudo">💳 Meios Pagamento</a></li>
