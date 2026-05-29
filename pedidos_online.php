@@ -16,7 +16,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_avancar_todos']))
         $pdo->beginTransaction();
 
         // [TRAVA DO CAIXA REAL] Busca um caixa que esteja com status 'aberto' na sua tabela controle_caixas
-        // Damos preferência para o caixa do usuário logado, se não houver, pega o primeiro aberto do sistema
         $usuario_id = $_SESSION['usuario_id'] ?? null;
         
         if ($usuario_id) {
@@ -32,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_avancar_todos']))
 
         // Se nenhum caixa estiver aberto no sistema, bloqueia a finalização em massa
         if (!$caixa_ativo) {
-            throw new Exception("Não há nenhum caixa aberto! Abra o caixa na tela de movimentação antes de finalizar os pedidos.");
+            throw new Exception("Não há nenhum caixa aberto! Abra o caixa na tela de movimentação antes de avançar ou finalizar pedidos.");
         }
 
         $id_caixa = (int)$caixa_ativo['id'];
@@ -245,27 +244,27 @@ try {
             <div style="border-top: 1px solid #eee; padding-top: 10px; display: flex; flex-wrap: wrap; gap: 5px; justify-content: space-between;">
                 <div>
                     <?php if($p['status'] == 'Pendente'): ?>
-                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Confirmado')" class="btn-acao" style="background: #17a2b8;">Aceitar Pedido</button>
+                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Confirmado', <?= (int)($p['motoboy_id'] ?? 0) ?>)" class="btn-acao" style="background: #17a2b8;">Aceitar Pedido</button>
                     <?php endif; ?>
 
                     <?php if($p['status'] == 'Confirmado'): ?>
-                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Em Preparo')" class="btn-acao" style="background: #007bff;">Mandar p/ Cozinha</button>
+                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Em Preparo', <?= (int)($p['motoboy_id'] ?? 0) ?>)" class="btn-acao" style="background: #007bff;">Mandar p/ Cozinha</button>
                     <?php endif; ?>
 
                     <?php if($p['status'] == 'Em Preparo'): ?>
                         <?php if($p['tipo_entrega'] === 'retirada'): ?>
-                            <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Finalizado')" class="btn-acao" style="background: #28a745;">Cliente Retirou (Finalizar)</button>
+                            <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Finalizado', <?= (int)($p['motoboy_id'] ?? 0) ?>)" class="btn-acao" style="background: #28a745;">Cliente Retirou (Finalizar)</button>
                         <?php else: ?>
-                            <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Saiu para Entrega')" class="btn-acao" style="background: #ffc107; color:#333;"><i class="fas fa-motorcycle"></i> Despachar Entrega</button>
+                            <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Saiu para Entrega', <?= (int)($p['motoboy_id'] ?? 0) ?>)" class="btn-acao" style="background: #ffc107; color:#333;"><i class="fas fa-motorcycle"></i> Despachar Entrega</button>
                         <?php endif; ?>
                     <?php endif; ?>
 
                     <?php if($p['status'] == 'Saiu para Entrega'): ?>
-                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Finalizado')" class="btn-acao" style="background: #28a745;">Entrega Concluída (Finalizar)</button>
+                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Finalizado', <?= (int)($p['motoboy_id'] ?? 0) ?>)" class="btn-acao" style="background: #28a745;">Entrega Concluída (Finalizar)</button>
                     <?php endif; ?>
                 </div>
 
-                <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Cancelado')" class="btn-cancelar"><i class="fas fa-times"></i> Cancelar</button>
+                <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Cancelado', <?= (int)($p['motoboy_id'] ?? 0) ?>)" class="btn-cancelar"><i class="fas fa-times"></i> Cancelar</button>
             </div>
         </div>
     <?php endforeach; ?>
@@ -275,22 +274,23 @@ try {
             <h3>📋 Itens do Pedido</h3>
             <div id="conteudoItens" style="max-height: 300px; overflow-y: auto; margin: 15px 0;">Carregando...</div>
             <hr>
-            <button onclick="fecharModal()" style="width:100%; padding:10px; background:#6c757d; color:white; border:none; border-radius:5px; cursor:pointer;">Fechar</button>
+            <button onclick="fecharModal()" style="width:100%; padding:10px; background:#6c757d; colorwhite; border:none; border-radius:5px; cursor:pointer;">Fechar</button>
         </div>
     </div>
 
     <script>
-        // Configurações iniciais de Áudio e Contagem
         const somAlerta = document.getElementById('audioAlerta');
         let tempo = 30;
 
-        // Função de Atualização de Status Individual
-        function atualizarStatus(id, novoStatus) {
+        // CORRIGIDO: Agora envia os parâmetros exatos esperados pelo atualizar_status.php
+        function atualizarStatus(id, novoStatus, motoboyId = 0) {
             if(!confirm("Mudar status do pedido #" + id + " para '" + novoStatus + "'?")) return;
             
             const formData = new FormData();
-            formData.append('id', id);
-            formData.append('status', novoStatus);
+            formData.append('pedido_id', id);       // Antes estava apenas 'id'
+            formData.append('motoboy_id', motoboyId); // Adicionado para cumprir a trava
+            formData.append('origem', 'site');       // Avisa o script que a movimentação vem do site
+            formData.append('status', novoStatus);   // Mantém o status desejado
 
             fetch('atualizar_status.php', {
                 method: 'POST',
@@ -298,19 +298,19 @@ try {
             })
             .then(res => res.json())
             .then(res => {
-                if(res.sucesso) {
+                // Modificado para capturar a resposta correta de erro e travar o painel
+                if(res.status === 'sucesso' || res.sucesso) {
                     location.reload();
                 } else {
-                    alert("Erro ao atualizar: " + (res.erro || "Desconhecido"));
+                    alert("⚠️ BLOQUEADO: " + (res.msg || res.erro || "Verifique se o caixa está aberto."));
                 }
             })
             .catch(err => {
                 console.error(err);
-                alert("Erro de comunicação.");
+                alert("Erro de comunicação com o script de atualização.");
             });
         }
 
-        // Verificação de novos pedidos (Som de Alerta)
         function verificarNovosPedidos() {
             fetch('checar_total_pedidos.php')
                 .then(res => res.json())
@@ -318,7 +318,7 @@ try {
                     if(data.total_pendentes > 0) {
                         if (somAlerta) {
                             somAlerta.loop = true;
-                            somAlerta.play().catch(e => console.log("Clique na página para ativar o som."));
+                            somAlerta.play().catch(e => console.log("Som ativado após interação."));
                         }
                     } else {
                         if (somAlerta) {
@@ -330,7 +330,6 @@ try {
                 .catch(err => console.error("Erro ao checar:", err));
         }
 
-        // Funções do Modal de Detalhes
         function verDetalhes(id) {
             document.getElementById('modalDetalhes').style.display = 'block';
             const conteudo = document.getElementById('conteudoItens');
@@ -368,11 +367,9 @@ try {
         }
 
         function fecharModal() {
-            document.getElementById('modalDetalhes').style.none = 'none';
             document.getElementById('modalDetalhes').style.display = 'none';
         }
 
-        // --- INICIALIZAÇÃO DOS INTERVALOS ---
         setInterval(verificarNovosPedidos, 5000);
 
         setInterval(() => {
