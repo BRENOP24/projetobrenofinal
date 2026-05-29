@@ -245,27 +245,27 @@ try {
             <div style="border-top: 1px solid #eee; padding-top: 10px; display: flex; flex-wrap: wrap; gap: 5px; justify-content: space-between;">
                 <div>
                     <?php if($p['status'] == 'Pendente'): ?>
-                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Confirmado', <?= (int)($p['motoboy_id'] ?? 0) ?>)" class="btn-acao" style="background: #17a2b8;">Aceitar Pedido</button>
+                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Confirmado', '<?= $p['tipo_entrega'] ?>')" class="btn-acao" style="background: #17a2b8;">Aceitar Pedido</button>
                     <?php endif; ?>
 
                     <?php if($p['status'] == 'Confirmado'): ?>
-                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Em Preparo', <?= (int)($p['motoboy_id'] ?? 0) ?>)" class="btn-acao" style="background: #007bff;">Mandar p/ Cozinha</button>
+                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Em Preparo', '<?= $p['tipo_entrega'] ?>')" class="btn-acao" style="background: #007bff;">Mandar p/ Cozinha</button>
                     <?php endif; ?>
 
                     <?php if($p['status'] == 'Em Preparo'): ?>
                         <?php if($p['tipo_entrega'] === 'retirada'): ?>
-                            <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Finalizado', <?= (int)($p['motoboy_id'] ?? 0) ?>)" class="btn-acao" style="background: #28a745;">Cliente Retirou (Finalizar)</button>
+                            <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Finalizado', '<?= $p['tipo_entrega'] ?>')" class="btn-acao" style="background: #28a745;">Cliente Retirou (Finalizar)</button>
                         <?php else: ?>
-                            <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Saiu para Entrega', <?= (int)($p['motoboy_id'] ?? 0) ?>)" class="btn-acao" style="background: #ffc107; color:#333;"><i class="fas fa-motorcycle"></i> Despachar Entrega</button>
+                            <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Saiu para Entrega', '<?= $p['tipo_entrega'] ?>')" class="btn-acao" style="background: #ffc107; color:#333;"><i class="fas fa-motorcycle"></i> Despachar Entrega</button>
                         <?php endif; ?>
                     <?php endif; ?>
 
                     <?php if($p['status'] == 'Saiu para Entrega'): ?>
-                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Finalizado', <?= (int)($p['motoboy_id'] ?? 0) ?>)" class="btn-acao" style="background: #28a745;">Entrega Concluída (Finalizar)</button>
+                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Finalizado', '<?= $p['tipo_entrega'] ?>')" class="btn-acao" style="background: #28a745;">Entrega Concluída (Finalizar)</button>
                     <?php endif; ?>
                 </div>
 
-                <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Cancelado', <?= (int)($p['motoboy_id'] ?? 0) ?>)" class="btn-cancelar"><i class="fas fa-times"></i> Cancelar</button>
+                <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Cancelado')" class="btn-cancelar"><i class="fas fa-times"></i> Cancelar</button>
             </div>
         </div>
     <?php endforeach; ?>
@@ -284,15 +284,18 @@ try {
         const somAlerta = document.getElementById('audioAlerta');
         let tempo = 30;
 
-        // AJUSTADO: Função agora passa os nomes corretos esperados pelo atualizar_status.php
-        function atualizarStatus(id, novoStatus, motoboyId = 0) {
+        // AJUSTADO: Chave alterada para 'id' para dar match exato com o seu atualizar_status.php
+        function atualizarStatus(id, novoStatus, tipoEntrega = '') {
             if(!confirm("Mudar status do pedido #" + id + " para '" + novoStatus + "'?")) return;
             
             const formData = new FormData();
-            formData.append('pedido_id', id);        // Mudado de 'id' para 'pedido_id'
+            formData.append('id', id);              // CORRIGIDO: Voltou a ser 'id' para casar com o PHP
             formData.append('status', novoStatus);   
-            formData.append('motoboy_id', motoboyId); // Adicionado motoboy_id padrão para a rota
-            formData.append('origem', 'site');       // Adicionado identificador de origem
+            
+            // Se o tipo de entrega for informado, envia junto
+            if(tipoEntrega !== '') {
+                formData.append('tipo_entrega', tipoEntrega);
+            }
 
             fetch('atualizar_status.php', {
                 method: 'POST',
@@ -300,12 +303,10 @@ try {
             })
             .then(res => res.json())
             .then(res => {
-                // AJUSTADO: Verifica de forma correta o retorno do JSON estruturado com 'sucesso' ou 'status'
                 if(res.sucesso || res.status === 'sucesso') {
                     location.reload();
                 } else {
-                    // Exibe a mensagem de erro vinda do banco ou script (Ex: "Não há nenhum caixa aberto!")
-                    alert("BLOQUEADO: " + (res.erro || res.msg || "Verifique as configurações do caixa."));
+                    alert("BLOQUEADO: " + (res.erro || res.msg || "Verifique o processamento do pedido."));
                 }
             })
             .catch(err => {
