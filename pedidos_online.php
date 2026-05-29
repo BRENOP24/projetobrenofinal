@@ -1,6 +1,11 @@
 <?php
 require_once 'config/conexao.php';
 
+// Iniciamos a sessão caso ela ainda não tenha sido iniciada, para capturar o usuário se necessário
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 $mensagem_painel = "";
 
 // =======================================================
@@ -10,25 +15,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_avancar_todos']))
     try {
         $pdo->beginTransaction();
 
-        // [TRAVA DO CAIXA] Verificando se existe um caixa aberto no momento
-        // (Ajuste os nomes da tabela 'caixas' e coluna 'status' se forem diferentes no seu banco)
-        $sql_caixa = "SELECT id FROM caixas WHERE status = 'Aberto' LIMIT 1";
-        $stmt_caixa = $pdo->query($sql_caixa);
+        // [TRAVA DO CAIXA REAL] Busca um caixa que esteja com status 'aberto' na sua tabela controle_caixas
+        // Damos preferência para o caixa do usuário logado, se não houver, pega o primeiro aberto do sistema
+        $usuario_id = $_SESSION['usuario_id'] ?? null;
+        
+        if ($usuario_id) {
+            $sql_caixa = "SELECT id FROM controle_caixas WHERE usuario_id = ? AND status = 'aberto' LIMIT 1";
+            $stmt_caixa = $pdo->prepare($sql_caixa);
+            $stmt_caixa->execute([$usuario_id]);
+        } else {
+            $sql_caixa = "SELECT id FROM controle_caixas WHERE status = 'aberto' LIMIT 1";
+            $stmt_caixa = $pdo->query($sql_caixa);
+        }
+        
         $caixa_ativo = $stmt_caixa->fetch(PDO::FETCH_ASSOC);
 
+        // Se nenhum caixa estiver aberto no sistema, bloqueia a finalização em massa
         if (!$caixa_ativo) {
-            throw new Exception("Não há nenhum caixa aberto! Abra o caixa antes de finalizar os pedidos para não perder os lançamentos.");
+            throw new Exception("Não há nenhum caixa aberto! Abra o caixa na tela de movimentação antes de finalizar os pedidos.");
         }
 
-        $id_caixa = $caixa_ativo['id'];
+        $id_caixa = (int)$caixa_ativo['id'];
 
-        // 1. Quem é 'Saiu para Entrega' -> Finaliza (Adicionado id_caixa)
+        // 1. Quem é 'Saiu para Entrega' -> Finaliza (Atualizando o id_caixa correto)
         $sql1 = "UPDATE pedidos_online SET status = 'Finalizado', id_caixa = :id_caixa WHERE status = 'Saiu para Entrega'";
         $stmt1 = $pdo->prepare($sql1);
         $stmt1->execute([':id_caixa' => $id_caixa]);
         $total1 = $stmt1->rowCount();
 
-        // 2. Quem é 'Em Preparo' e RETIRADA -> Finaliza (Adicionado id_caixa)
+        // 2. Quem é 'Em Preparo' e RETIRADA -> Finaliza (Atualizando o id_caixa correto)
         $sql2 = "UPDATE pedidos_online SET status = 'Finalizado', id_caixa = :id_caixa WHERE status = 'Em Preparo' AND tipo_entrega = 'retirada'";
         $stmt2 = $pdo->prepare($sql2);
         $stmt2->execute([':id_caixa' => $id_caixa]);
@@ -65,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_avancar_todos']))
                                     <i class='fas fa-info-circle fa-lg'></i> Nenhum pedido ativo para avançar no momento.
                                  </div>";
         }
-    } catch (Exception $e) { // Alterado para Exception genérica para capturar a nossa trava
+    } catch (Exception $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
@@ -74,6 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_avancar_todos']))
                             </div>";
     }
 }
+
 
 // =======================================================
 // BUSCA DOS PEDIDOS ATIVOS
