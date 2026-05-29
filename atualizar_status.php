@@ -28,33 +28,41 @@ try {
         throw new Exception("Pedido não encontrado na tabela pedidos_online.");
     }
 
-    // 2. SE O STATUS FOR FINALIZADO, BUSCA O CAIXA ATIVO PARA VINCULAR
+    // 2. VALIDAÇÃO RIGOROSA DO CAIXA (Apenas se estiver finalizando o pedido)
     $id_caixa = null;
     if ($novoStatus === 'Finalizado') {
         $usuario_id = $_SESSION['usuario_id'] ?? null;
+        $caixa_ativo = null;
         
-        // Tentativa 1: Busca caixa do usuário logado
+        // Tentativa 1: Busca caixa aberto estritamente do usuário logado
         if ($usuario_id) {
-            $sql_caixa = "SELECT id FROM controle_caixas WHERE usuario_id = ? AND (status = 'aberto' OR status = 'ABERTO') LIMIT 1";
+            $sql_caixa = "SELECT id FROM controle_caixas WHERE usuario_id = ? AND LOWER(status) = 'aberto' LIMIT 1";
             $stmt_caixa = $pdo->prepare($sql_caixa);
             $stmt_caixa->execute([$usuario_id]);
             $caixa_ativo = $stmt_caixa->fetch(PDO::FETCH_ASSOC);
         }
         
-        // Tentativa 2: Busca qualquer caixa aberto no sistema
+        // Tentativa 2: Se não achou do usuário, busca QUALQUER caixa que esteja aberto no sistema
         if (empty($caixa_ativo)) {
-            $sql_caixa = "SELECT id FROM controle_caixas WHERE status = 'aberto' OR status = 'ABERTO' LIMIT 1";
+            $sql_caixa = "SELECT id FROM controle_caixas WHERE LOWER(status) = 'aberto' LIMIT 1";
             $stmt_caixa = $pdo->query($sql_caixa);
             $caixa_ativo = $stmt_caixa->fetch(PDO::FETCH_ASSOC);
         }
 
-        // Define o ID do caixa ou usa o fallback 1 para testes do TCC
-        $id_caixa = !empty($caixa_ativo) ? (int)$caixa_ativo['id'] : 1;
+        // TRAVA REAL: Se não encontrou NENHUM caixa com status 'aberto', bloqueia e avisa o usuário
+        if (empty($caixa_ativo)) {
+            echo json_encode([
+                'sucesso' => false, 
+                'erro' => 'Não há nenhum caixa aberto! Abra o caixa na tela de movimentação antes de finalizar este pedido.'
+            ]);
+            exit;
+        }
+
+        $id_caixa = (int)$caixa_ativo['id'];
     }
 
-    // 3. Monta e executa a Query de UPDATE baseada nos dados recebidos
+    // 3. Executa o UPDATE aplicando o id_caixa correto
     if ($novoStatus === 'Finalizado') {
-        // Se está finalizando, força a gravação do id_caixa
         if ($tipoEntrega !== null && $tipoEntrega !== '') {
             $stmtUpdate = $pdo->prepare("UPDATE pedidos_online SET status = ?, tipo_entrega = ?, id_caixa = ? WHERE id = ?");
             $stmtUpdate->execute([$novoStatus, $tipoEntrega, $id_caixa, $id_online]);
@@ -63,7 +71,7 @@ try {
             $stmtUpdate->execute([$novoStatus, $id_caixa, $id_online]);
         }
     } else {
-        // Fluxo normal (Pendente, Confirmado, Em Preparo, Cancelado)
+        // Fluxos intermediários (Pendente, Confirmado, Em Preparo, Cancelado)
         if ($tipoEntrega !== null && $tipoEntrega !== '') {
             $stmtUpdate = $pdo->prepare("UPDATE pedidos_online SET status = ?, tipo_entrega = ? WHERE id = ?");
             $stmtUpdate->execute([$novoStatus, $tipoEntrega, $id_online]);
