@@ -10,16 +10,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_avancar_todos']))
     try {
         $pdo->beginTransaction();
 
-        // 1. Quem é 'Saiu para Entrega' -> Finaliza
-        $sql1 = "UPDATE pedidos_online SET status = 'Finalizado' WHERE status = 'Saiu para Entrega'";
+        // [TRAVA DO CAIXA] Verificando se existe um caixa aberto no momento
+        // (Ajuste os nomes da tabela 'caixas' e coluna 'status' se forem diferentes no seu banco)
+        $sql_caixa = "SELECT id FROM caixas WHERE status = 'Aberto' LIMIT 1";
+        $stmt_caixa = $pdo->query($sql_caixa);
+        $caixa_ativo = $stmt_caixa->fetch(PDO::FETCH_ASSOC);
+
+        if (!$caixa_ativo) {
+            throw new Exception("Não há nenhum caixa aberto! Abra o caixa antes de finalizar os pedidos para não perder os lançamentos.");
+        }
+
+        $id_caixa = $caixa_ativo['id'];
+
+        // 1. Quem é 'Saiu para Entrega' -> Finaliza (Adicionado id_caixa)
+        $sql1 = "UPDATE pedidos_online SET status = 'Finalizado', id_caixa = :id_caixa WHERE status = 'Saiu para Entrega'";
         $stmt1 = $pdo->prepare($sql1);
-        $stmt1->execute();
+        $stmt1->execute([':id_caixa' => $id_caixa]);
         $total1 = $stmt1->rowCount();
 
-        // 2. Quem é 'Em Preparo' e RETIRADA -> Finaliza
-        $sql2 = "UPDATE pedidos_online SET status = 'Finalizado' WHERE status = 'Em Preparo' AND tipo_entrega = 'retirada'";
+        // 2. Quem é 'Em Preparo' e RETIRADA -> Finaliza (Adicionado id_caixa)
+        $sql2 = "UPDATE pedidos_online SET status = 'Finalizado', id_caixa = :id_caixa WHERE status = 'Em Preparo' AND tipo_entrega = 'retirada'";
         $stmt2 = $pdo->prepare($sql2);
-        $stmt2->execute();
+        $stmt2->execute([':id_caixa' => $id_caixa]);
         $total2 = $stmt2->rowCount();
 
         // 3. Quem é 'Em Preparo' e DELIVERY -> Sai para entrega
@@ -53,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_avancar_todos']))
                                     <i class='fas fa-info-circle fa-lg'></i> Nenhum pedido ativo para avançar no momento.
                                  </div>";
         }
-    } catch (PDOException $e) {
+    } catch (Exception $e) { // Alterado para Exception genérica para capturar a nossa trava
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
