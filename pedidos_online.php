@@ -16,6 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_avancar_todos']))
         $pdo->beginTransaction();
 
         // [TRAVA DO CAIXA REAL] Busca um caixa que esteja com status 'aberto' na sua tabela controle_caixas
+        // Damos preferência para o caixa do usuário logado, se não houver, pega o primeiro aberto do sistema
         $usuario_id = $_SESSION['usuario_id'] ?? null;
         
         if ($usuario_id) {
@@ -31,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_avancar_todos']))
 
         // Se nenhum caixa estiver aberto no sistema, bloqueia a finalização em massa
         if (!$caixa_ativo) {
-            throw new Exception("Não há nenhum caixa aberto! Abra o caixa na tela de movimentação antes de avançar ou finalizar pedidos.");
+            throw new Exception("Não há nenhum caixa aberto! Abra o caixa na tela de movimentação antes de finalizar os pedidos.");
         }
 
         $id_caixa = (int)$caixa_ativo['id'];
@@ -274,23 +275,24 @@ try {
             <h3>📋 Itens do Pedido</h3>
             <div id="conteudoItens" style="max-height: 300px; overflow-y: auto; margin: 15px 0;">Carregando...</div>
             <hr>
-            <button onclick="fecharModal()" style="width:100%; padding:10px; background:#6c757d; colorwhite; border:none; border-radius:5px; cursor:pointer;">Fechar</button>
+            <button onclick="fecharModal()" style="width:100%; padding:10px; background:#6c757d; color:white; border:none; border-radius:5px; cursor:pointer;">Fechar</button>
         </div>
     </div>
 
     <script>
+        // Configurações iniciais de Áudio e Contagem
         const somAlerta = document.getElementById('audioAlerta');
         let tempo = 30;
 
-        // CORRIGIDO: Agora envia os parâmetros exatos esperados pelo atualizar_status.php
+        // AJUSTADO: Função agora passa os nomes corretos esperados pelo atualizar_status.php
         function atualizarStatus(id, novoStatus, motoboyId = 0) {
             if(!confirm("Mudar status do pedido #" + id + " para '" + novoStatus + "'?")) return;
             
             const formData = new FormData();
-            formData.append('pedido_id', id);       // Antes estava apenas 'id'
-            formData.append('motoboy_id', motoboyId); // Adicionado para cumprir a trava
-            formData.append('origem', 'site');       // Avisa o script que a movimentação vem do site
-            formData.append('status', novoStatus);   // Mantém o status desejado
+            formData.append('pedido_id', id);        // Mudado de 'id' para 'pedido_id'
+            formData.append('status', novoStatus);   
+            formData.append('motoboy_id', motoboyId); // Adicionado motoboy_id padrão para a rota
+            formData.append('origem', 'site');       // Adicionado identificador de origem
 
             fetch('atualizar_status.php', {
                 method: 'POST',
@@ -298,19 +300,21 @@ try {
             })
             .then(res => res.json())
             .then(res => {
-                // Modificado para capturar a resposta correta de erro e travar o painel
-                if(res.status === 'sucesso' || res.sucesso) {
+                // AJUSTADO: Verifica de forma correta o retorno do JSON estruturado com 'sucesso' ou 'status'
+                if(res.sucesso || res.status === 'sucesso') {
                     location.reload();
                 } else {
-                    alert("⚠️ BLOQUEADO: " + (res.msg || res.erro || "Verifique se o caixa está aberto."));
+                    // Exibe a mensagem de erro vinda do banco ou script (Ex: "Não há nenhum caixa aberto!")
+                    alert("BLOQUEADO: " + (res.erro || res.msg || "Verifique as configurações do caixa."));
                 }
             })
             .catch(err => {
                 console.error(err);
-                alert("Erro de comunicação com o script de atualização.");
+                alert("Erro de comunicação com o servidor.");
             });
         }
 
+        // Verificação de novos pedidos (Som de Alerta)
         function verificarNovosPedidos() {
             fetch('checar_total_pedidos.php')
                 .then(res => res.json())
@@ -318,7 +322,7 @@ try {
                     if(data.total_pendentes > 0) {
                         if (somAlerta) {
                             somAlerta.loop = true;
-                            somAlerta.play().catch(e => console.log("Som ativado após interação."));
+                            somAlerta.play().catch(e => console.log("Clique na página para ativar o som."));
                         }
                     } else {
                         if (somAlerta) {
@@ -330,6 +334,7 @@ try {
                 .catch(err => console.error("Erro ao checar:", err));
         }
 
+        // Funções do Modal de Detalhes
         function verDetalhes(id) {
             document.getElementById('modalDetalhes').style.display = 'block';
             const conteudo = document.getElementById('conteudoItens');
@@ -370,6 +375,7 @@ try {
             document.getElementById('modalDetalhes').style.display = 'none';
         }
 
+        // --- INICIALIZAÇÃO DOS INTERVALOS ---
         setInterval(verificarNovosPedidos, 5000);
 
         setInterval(() => {
