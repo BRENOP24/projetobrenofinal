@@ -28,37 +28,31 @@ try {
         throw new Exception("Pedido não encontrado na tabela pedidos_online.");
     }
 
-    // 2. VALIDAÇÃO RIGOROSA DO CAIXA (Apenas se estiver finalizando o pedido)
+    // 2. VALIDAÇÃO FIEL AO SEU SISTEMA LOCAL (Apenas para o status Finalizado)
     $id_caixa = null;
     if ($novoStatus === 'Finalizado') {
         $usuario_id = $_SESSION['usuario_id'] ?? null;
-        $caixa_ativo = null;
-        
-        // Tentativa 1: Busca caixa aberto estritamente do usuário logado
-        if ($usuario_id) {
-            $sql_caixa = "SELECT id FROM controle_caixas WHERE usuario_id = ? AND LOWER(status) = 'aberto' LIMIT 1";
-            $stmt_caixa = $pdo->prepare($sql_caixa);
-            $stmt_caixa->execute([$usuario_id]);
-            $caixa_ativo = $stmt_caixa->fetch(PDO::FETCH_ASSOC);
-        }
-        
-        // Tentativa 2: Se não achou do usuário, busca QUALQUER caixa que esteja aberto no sistema
-        if (empty($caixa_ativo)) {
-            $sql_caixa = "SELECT id FROM controle_caixas WHERE LOWER(status) = 'aberto' LIMIT 1";
-            $stmt_caixa = $pdo->query($sql_caixa);
-            $caixa_ativo = $stmt_caixa->fetch(PDO::FETCH_ASSOC);
+
+        if (!$usuario_id) {
+            echo json_encode(['sucesso' => false, 'erro' => 'Sessão de usuário expirada. Faça login novamente.']);
+            exit;
         }
 
-        // TRAVA REAL: Se não encontrou NENHUM caixa com status 'aberto', bloqueia e avisa o usuário
-        if (empty($caixa_ativo)) {
+        // Query idêntica à da sua tela de pedido local
+        $stmt_caixa = $pdo->prepare("SELECT id FROM controle_caixas WHERE usuario_id = ? AND status = 'aberto' LIMIT 1");
+        $stmt_caixa->execute([$usuario_id]);
+        $caixa = $stmt_caixa->fetch(PDO::FETCH_ASSOC);
+
+        // Se o caixa não existir/não estiver aberto, bloqueia imediatamente
+        if (!$caixa) {
             echo json_encode([
                 'sucesso' => false, 
-                'erro' => 'Não há nenhum caixa aberto! Abra o caixa na tela de movimentação antes de finalizar este pedido.'
+                'erro' => 'Não há nenhum caixa aberto para o seu usuário! Abra o caixa na tela de movimentação antes de finalizar pedidos.'
             ]);
             exit;
         }
 
-        $id_caixa = (int)$caixa_ativo['id'];
+        $id_caixa = (int)$caixa['id'];
     }
 
     // 3. Executa o UPDATE aplicando o id_caixa correto
