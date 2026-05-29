@@ -125,8 +125,6 @@ foreach ($caixas_brutos as $item) {
         <p style="text-align:center; color:#666;">Nenhum caixa encontrado para este status.</p>
     <?php endif; ?>
 
-// --- BUSCA ---
-    // ... (Mantenha o início igual até entrar no foreach dos caixas)
 
     <?php foreach ($caixas as $caixa): 
         // Decodifica o que o operador informou no fechamento
