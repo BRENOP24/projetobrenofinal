@@ -125,18 +125,39 @@ foreach ($caixas_brutos as $item) {
         <p style="text-align:center; color:#666;">Nenhum caixa encontrado para este status.</p>
     <?php endif; ?>
 
+// --- BUSCA ---
+    // ... (Mantenha o início igual até entrar no foreach dos caixas)
+
     <?php foreach ($caixas as $caixa): 
         // Decodifica o que o operador informou no fechamento
         $informado = json_decode($caixa['observacao_adm'], true); 
 
-        // 2. Busca VENDAS (Pedidos)
-        $sql_vendas = "SELECT f.id as forma_id, f.descricao as nome_pagto, SUM(p.valor_total) as total 
-                       FROM pedidos p 
-                       JOIN formas_pagamento f ON p.forma_pagamento_id = f.id 
-                       WHERE p.caixa_id = ? 
-                       GROUP BY f.id, f.descricao";
+        // 2. CORRIGIDO: Busca VENDAS tanto da tabela manual (pedidos) quanto do site (pedidos_online)
+        $sql_vendas = "
+            SELECT forma_id, nome_pagto, SUM(valor_total) as total 
+            FROM (
+                -- Vendas Manuais da Loja Física
+                SELECT p.forma_pagamento_id as forma_id, f.descricao as nome_pagto, p.valor_total 
+                FROM pedidos p 
+                JOIN formas_pagamento f ON p.forma_pagamento_id = f.id 
+                WHERE p.caixa_id = :caixa_id1
+                
+                UNION ALL
+                
+                -- Vendas Online vindas do Painel do Site
+                SELECT po.forma_pagamento_id as forma_id, f.descricao as nome_pagto, po.valor_total 
+                FROM pedidos_online po 
+                JOIN formas_pagamento f ON po.forma_pagamento_id = f.id 
+                WHERE po.id_caixa = :caixa_id2 AND po.status = 'Finalizado'
+            ) as vendas_unificadas
+            GROUP BY forma_id, nome_pagto
+        ";
+        
         $stmt_v = $pdo->prepare($sql_vendas);
-        $stmt_v->execute([$caixa['id']]);
+        $stmt_v->execute([
+            ':caixa_id1' => $caixa['id'],
+            ':caixa_id2' => $caixa['id']
+        ]);
         $vendas_banco = $stmt_v->fetchAll(PDO::FETCH_ASSOC);
 
         // Busca RECEBIMENTOS
