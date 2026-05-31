@@ -82,7 +82,7 @@ $historico = $stmtHist->fetchAll(PDO::FETCH_ASSOC);
         </div>
         <div class="col-md-4">
             <div class="card p-3 shadow-sm bg-white">
-                <h6 class="text-muted">Total Gasto</h6>
+                <h6 class="text-muted">Total gasto em todo seu histórico de pedidos</h6>
                 <h3>R$ <?= number_format($resumo['total_gasto'], 2, ',', '.') ?></h3>
             </div>
         </div>
