@@ -6,10 +6,13 @@ if (!isset($_SESSION['cliente_id'])) exit('Não autenticado.');
 
 $id_cliente = $_SESSION['cliente_id'];
 
-// Mudamos de id_cliente para cliente_id na linha abaixo
-$queryAtivos = "SELECT * FROM pedidos_online 
-                WHERE cliente_id = ? AND status NOT IN ('Finalizado', 'Cancelado') 
-                ORDER BY id DESC";
+// AJUSTADO: Agora faz o LEFT JOIN à tabela 'formas_pagamento' buscando a coluna 'descricao'
+$queryAtivos = "SELECT p.*, f.descricao AS nome_pagamento 
+                FROM pedidos_online p
+                LEFT JOIN formas_pagamento f ON p.forma_pagamento_id = f.id
+                WHERE p.cliente_id = ? AND p.status NOT IN ('Finalizado', 'Cancelado') 
+                ORDER BY p.id DESC";
+
 $stmt = $pdo->prepare($queryAtivos);
 $stmt->execute([$id_cliente]);
 $ativos = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -19,7 +22,6 @@ if (empty($ativos)) {
     exit;
 }
 
-// CORRIGIDO: Ajustado 'Saiu para Entrega' com 'E' maiúsculo para bater com o banco de dados
 $badges = [
     'Pendente'          => 'bg-secondary text-white',
     'Confirmado'        => 'bg-info text-dark',
@@ -28,7 +30,6 @@ $badges = [
     'Saiu para Entrega' => 'bg-dark text-white',
 ];
 
-// CORRIGIDO: Unificado os arrays para evitar que um sobrescreva o outro e ajustado as maiúsculas
 $passos = [
     'Pendente'          => 1,
     'Confirmado'        => 1,
@@ -80,7 +81,8 @@ foreach ($ativos as $pedido):
 
         <div class="row small text-muted">
             <div class="col-md-4"><strong>Valor:</strong> R$ <?= number_format($pedido['valor_total'], 2, ',', '.') ?></div>
-            <div class="col-md-4"><strong>Pagamento:</strong> <?= htmlspecialchars($pedido['forma_pagamento'] ?? 'Não informada') ?></div>
+            
+            <div class="col-md-4"><strong>Pagamento:</strong> <?= htmlspecialchars($pedido['nome_pagamento'] ?? 'Não informada') ?></div>
         </div>
     </div>
 <?php endforeach; ?>
