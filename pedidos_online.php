@@ -43,20 +43,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_avancar_todos']))
         $stmt1->execute([':id_caixa' => $id_caixa]);
         $total1 = $stmt1->rowCount();
 
-        // 2. Quem é 'Em Preparo' e RETIRADA -> Finaliza (Atualizando o id_caixa correto)
-        $sql2 = "UPDATE pedidos_online SET status = 'Finalizado', id_caixa = :id_caixa WHERE status = 'Em Preparo' AND tipo_entrega = 'retirada'";
+        // 2. Quem é 'Em preparação' e RETIRADA -> Finaliza (Atualizando o id_caixa correto)
+        $sql2 = "UPDATE pedidos_online SET status = 'Finalizado', id_caixa = :id_caixa WHERE status = 'Em preparação' AND tipo_entrega = 'retirada'";
         $stmt2 = $pdo->prepare($sql2);
         $stmt2->execute([':id_caixa' => $id_caixa]);
         $total2 = $stmt2->rowCount();
 
-        // 3. Quem é 'Em Preparo' e DELIVERY -> Sai para entrega
-        $sql3 = "UPDATE pedidos_online SET status = 'Saiu para Entrega' WHERE status = 'Em Preparo' AND tipo_entrega != 'retirada'";
+        // 3. Quem é 'Em preparação' e DELIVERY -> Sai para entrega
+        $sql3 = "UPDATE pedidos_online SET status = 'Saiu para Entrega' WHERE status = 'Em preparação' AND tipo_entrega != 'retirada'";
         $stmt3 = $pdo->prepare($sql3);
         $stmt3->execute();
         $total3 = $stmt3->rowCount();
 
         // 4. Quem é 'Confirmado' -> Vai para a Cozinha
-        $sql4 = "UPDATE pedidos_online SET status = 'Em Preparo' WHERE status = 'Confirmado'";
+        $sql4 = "UPDATE pedidos_online SET status = 'Em preparação' WHERE status = 'Confirmado'";
         $stmt4 = $pdo->prepare($sql4);
         $stmt4->execute();
         $total4 = $stmt4->rowCount();
@@ -127,10 +127,10 @@ try {
         .status-badge { padding: 5px 10px; border-radius: 15px; font-size: 12px; font-weight: bold; }
         
         /* Cores dos Status conforme o seu Enum do Banco */
-        .Pendente { color: #856404; background: #fff3cd; }
-        .Confirmado { color: #0c5460; background: #d1ecf1; }
-        .Em\ Preparo { color: #004085; background: #cce5ff; }
-        .Saiu\ para\ Entrega { color: #155724; background: #d4edda; }
+        .status-Pendente { color: #856404; background: #fff3cd; }
+        .status-Confirmado { color: #0c5460; background: #d1ecf1; }
+        .status-Em-preparacao { color: #004085; background: #cce5ff; }
+        .status-Saiu-para-Entrega { color: #155724; background: #d4edda; }
         
         /* Tipos de Entrega */
         .tipo-entrega { padding: 8px; border-radius: 5px; font-size: 14px; margin-bottom: 10px; display: inline-block; font-weight: bold; }
@@ -187,13 +187,16 @@ try {
             // Define a cor da borda baseado no status
             $corBorda = '#ffc107'; // Pendente
             if($p['status'] == 'Confirmado') $corBorda = '#17a2b8';
-            if($p['status'] == 'Em Preparo') $corBorda = '#007bff';
+            if($p['status'] == 'Em preparação') $corBorda = '#007bff';
             if($p['status'] == 'Saiu para Entrega') $corBorda = '#28a745';
+
+            // Cria um nome de classe limpo para o CSS (ex: "Em preparação" vira "Em-preparacao")
+            $classeStatus = 'status-' . str_replace([' ', 'ç', 'ã'], ['-', 'c', 'a'], $p['status']);
         ?>
         <div class="card-pedido" style="border-left-color: <?= $corBorda ?>;">
             <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <h3 style="margin:0;">#<?= $p['id'] ?> - <?= htmlspecialchars($p['cliente_nome']) ?></h3>
-                <span class="status-badge <?= str_replace(' ', '\ ', $p['status']) ?>"><?= $p['status'] ?></span>
+                <span class="status-badge <?= $classeStatus ?>"><?= $p['status'] ?></span>
             </div>
             
             <div style="margin-bottom: 15px;">
@@ -249,10 +252,10 @@ try {
                     <?php endif; ?>
 
                     <?php if($p['status'] == 'Confirmado'): ?>
-                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Em Preparo', '<?= $p['tipo_entrega'] ?>')" class="btn-acao" style="background: #007bff;">Mandar p/ Cozinha</button>
+                        <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Em preparação', '<?= $p['tipo_entrega'] ?>')" class="btn-acao" style="background: #007bff;">Mandar p/ Cozinha</button>
                     <?php endif; ?>
 
-                    <?php if($p['status'] == 'Em Preparo'): ?>
+                    <?php if($p['status'] == 'Em preparação'): ?>
                         <?php if($p['tipo_entrega'] === 'retirada'): ?>
                             <button onclick="atualizarStatus(<?= $p['id'] ?>, 'Finalizado', '<?= $p['tipo_entrega'] ?>')" class="btn-acao" style="background: #28a745;">Cliente Retirou (Finalizar)</button>
                         <?php else: ?>
@@ -280,19 +283,16 @@ try {
     </div>
 
     <script>
-        // Configurações iniciais de Áudio e Contagem
         const somAlerta = document.getElementById('audioAlerta');
         let tempo = 30;
 
-        // AJUSTADO: Chave alterada para 'id' para dar match exato com o seu atualizar_status.php
         function atualizarStatus(id, novoStatus, tipoEntrega = '') {
             if(!confirm("Mudar status do pedido #" + id + " para '" + novoStatus + "'?")) return;
             
             const formData = new FormData();
-            formData.append('id', id);              // CORRIGIDO: Voltou a ser 'id' para casar com o PHP
+            formData.append('id', id);
             formData.append('status', novoStatus);   
             
-            // Se o tipo de entrega for informado, envia junto
             if(tipoEntrega !== '') {
                 formData.append('tipo_entrega', tipoEntrega);
             }
@@ -315,7 +315,6 @@ try {
             });
         }
 
-        // Verificação de novos pedidos (Som de Alerta)
         function verificarNovosPedidos() {
             fetch('checar_total_pedidos.php')
                 .then(res => res.json())
@@ -335,7 +334,6 @@ try {
                 .catch(err => console.error("Erro ao checar:", err));
         }
 
-        // Funções do Modal de Detalhes
         function verDetalhes(id) {
             document.getElementById('modalDetalhes').style.display = 'block';
             const conteudo = document.getElementById('conteudoItens');
@@ -376,7 +374,6 @@ try {
             document.getElementById('modalDetalhes').style.display = 'none';
         }
 
-        // --- INICIALIZAÇÃO DOS INTERVALOS ---
         setInterval(verificarNovosPedidos, 5000);
 
         setInterval(() => {
