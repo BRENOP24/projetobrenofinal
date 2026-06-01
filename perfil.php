@@ -1,12 +1,12 @@
 <?php
 // CRÍTICO: Páginas internas do painel PRECISAM usar a sessão restrita para não perder os dados do cliente logado!
-require_once 'config/sessao.php'; 
+require_once 'config/sessao_visitante.php'; 
 require_once 'config/conexao.php';
 require_once 'config/funcoes.php';
 
 // Garante que se a sessão sumir por timeout, manda para a tela de login ao invés de quebrar a página
 if (!isset($_SESSION['cliente_id'])) {
-    header("Location: auth.php");
+    header("Location: cliente_online.php");
     exit;
 }
 
