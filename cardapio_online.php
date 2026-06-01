@@ -437,7 +437,7 @@ body{
     </span>
 
     <br>
-    <a href="auth.php" class="btn-painel-topo">
+    <a href="cliente_online.php" class="btn-painel-topo">
         👤 Acessar Meu Painel
     </a>
 
