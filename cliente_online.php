@@ -71,60 +71,62 @@ if (isset($_POST['resetar_senha'])) {
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Cardápio Online - Área do Cliente</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <title>Cardápio Online - Área do Cliente</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <style>
         body { background-color: #f8f9fa; }
-        .auth-card { max-width: 450px; margin: 50px auto; }
+        .auth-card { max-width: 450px; margin: 20px auto; }
+        @media (min-width: 768px) {
+            .auth-card { margin: 80px auto; } /* Mais espaçamento no topo apenas em telas grandes */
+        }
     </style>
 </head>
 <body>
-<div class="container">
-    <div class="card auth-card shadow-sm p-4">
-        <h2 class="text-center mb-4 text-primary">Área do Cliente</h2>
+<div class="container px-3"> <div class="card auth-card shadow-sm p-4">
+        <h2 class="text-center mb-4 text-primary fw-bold" style="font-size: 1.75rem;">Área do Cliente</h2>
         
         <?php if(!empty($mensagem)): ?>
-            <div class="alert alert-info text-center"><?= htmlspecialchars($mensagem) ?></div>
+            <div class="alert alert-info text-center small"><?= htmlspecialchars($mensagem) ?></div>
         <?php endif; ?>
 
-        <ul class="nav nav-tabs mb-3" id="authTabs" role="tablist">
-            <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabLogin">Login</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabEsqueci">Definir / Esqueci Senha</button></li>
+        <ul class="nav nav-tabs nav-fill mb-3" id="authTabs" role="tablist">
+            <li class="nav-item"><button class="nav-link active fw-bold" data-bs-toggle="tab" data-bs-target="#tabLogin">Login</button></li>
+            <li class="nav-item"><button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#tabEsqueci">Mudar / Esqueci Senha</button></li>
         </ul>
 
-        <div class="tab-content">
+        <div class="tab-content mt-4">
             <div class="tab-pane fade show active" id="tabLogin">
                 <form method="POST">
                     <div class="mb-3">
-                        <label>CPF do Cliente</label>
-                        <input type="text" id="cpf_login_visual" class="form-control" required placeholder="000.000.000-00" autocomplete="off">
+                        <label class="form-label fw-semibold">CPF do Cliente</label>
+                        <input type="text" id="cpf_login_visual" class="form-control form-control-lg" required placeholder="000.000.000-00" autocomplete="off" inputmode="numeric">
                         <input type="hidden" name="login_input" id="cpf_login_real">
                     </div>
                     <div class="mb-3">
-                        <label>Senha</label>
-                        <input type="password" name="senha" class="form-control" required>
+                        <label class="form-label fw-semibold">Senha</label>
+                        <input type="password" name="senha" class="form-control form-control-lg" required placeholder="Digite sua senha">
                     </div>
-                    <button type="submit" name="login" class="btn btn-primary w-100">Entrar</button>
+                    <button type="submit" name="login" class="btn btn-primary btn-lg w-100 mt-2">Entrar</button>
                 </form>
             </div>
 
             <div class="tab-pane fade" id="tabEsqueci">
                 <form method="POST">
                     <div class="mb-3">
-                        <p class="text-muted small">Insira seu CPF para criar uma senha ou redefinir a atual caso tenha esquecido.</p>
-                        <label>CPF do Cliente</label>
-                        <input type="text" id="cpf_reset_visual" class="form-control" required placeholder="000.000.000-00" autocomplete="off">
+                        <p class="text-muted small bg-light p-2 rounded border">Insira seu CPF para criar uma senha ou redefinir a atual caso tenha esquecido.</p>
+                        <label class="form-label fw-semibold">CPF do Cliente</label>
+                        <input type="text" id="cpf_reset_visual" class="form-control form-control-lg" required placeholder="000.000.000-00" autocomplete="off" inputmode="numeric">
                         <input type="hidden" name="reset_input" id="cpf_reset_real">
                     </div>
                     <div class="mb-3">
-                        <label>Nova Senha</label>
-                        <input type="password" name="nova_senha_reset" class="form-control" required>
+                        <label class="form-label fw-semibold">Nova Senha</label>
+                        <input type="password" name="nova_senha_reset" class="form-control form-control-lg" required placeholder="Mínimo 6 caracteres">
                     </div>
                     <div class="mb-3">
-                        <label>Confirmar Nova Senha</label>
-                        <input type="password" name="confirmar_senha_reset" class="form-control" required>
+                        <label class="form-label fw-semibold">Confirmar Nova Senha</label>
+                        <input type="password" name="confirmar_senha_reset" class="form-control form-control-lg" required placeholder="Repita a nova senha">
                     </div>
-                    <button type="submit" name="resetar_senha" class="btn btn-danger w-100">Salvar Nova Senha</button>
+                    <button type="submit" name="resetar_senha" class="btn btn-danger btn-lg w-100 mt-2">Salvar Nova Senha</button>
                 </form>
             </div>
         </div>
@@ -141,10 +143,8 @@ document.addEventListener("DOMContentLoaded", function() {
         const inputVisual = document.getElementById(idVisual);
         const inputReal = document.getElementById(idReal);
         
-        // Aplica formatação de CPF comum enquanto digita
         VMasker(inputVisual).maskPattern("999.999.999-99");
         
-        // Quando o usuário volta a focar no campo para editar, mostra o CPF real digitado anteriormente
         inputVisual.addEventListener('focus', function() {
             if (inputReal.value) {
                 inputVisual.value = inputReal.value;
@@ -152,15 +152,12 @@ document.addEventListener("DOMContentLoaded", function() {
             }
         });
         
-        // Quando o usuário clica fora do campo, armazena os dados reais e mascara visualmente com asteriscos
         inputVisual.addEventListener('blur', function() {
             let numeros = inputVisual.value.replace(/\D/g, '');
             
             if (numeros.length === 11) {
-                // Alimenta o input oculto com o valor limpo (só números) para enviar corretamente ao PHP
                 inputReal.value = numeros;
                 
-                // Exibe de forma segura escondendo os primeiros blocos: ***.***.839-11
                 let bloco3 = numeros.substring(6, 9);
                 let digitos = numeros.substring(9, 11);
                 inputVisual.value = `***.***.${bloco3}-${digitos}`;
@@ -170,7 +167,6 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 
-    // Ativa a regra de máscara visual separada nos dois formulários
     gerenciarCpfMascarado('cpf_login_visual', 'cpf_login_real');
     gerenciarCpfMascarado('cpf_reset_visual', 'cpf_reset_real');
 });
