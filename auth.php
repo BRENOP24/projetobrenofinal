@@ -10,7 +10,7 @@ if (isset($_POST['login'])) {
     $login_input = preg_replace('/\D/', '', $_POST['login_input']);
     $senha = $_POST['senha'];
 
-    // Validação focada estritamente no CPF
+    // Consulta focada estritamente no CPF
     $stmt = $pdo->prepare("SELECT * FROM clientes_online WHERE cpf = :input");
     $stmt->execute(['input' => $login_input]);
     $cliente = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -34,7 +34,7 @@ if (isset($_POST['resetar_senha'])) {
     if ($nova_senha !== $confirmar) {
         $mensagem = "As senhas não coincidem.";
     } else {
-        // Validação focada estritamente no CPF
+        // Consulta focada estritamente no CPF
         $stmt = $pdo->prepare("SELECT id, resets_hoje, ultima_atualizacao_reset FROM clientes_online WHERE cpf = :id");
         $stmt->execute(['id' => $identificador]);
         $cliente = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -43,7 +43,6 @@ if (isset($_POST['resetar_senha'])) {
             $hoje = date('Y-m-d');
             $resets = $cliente['resets_hoje'];
             
-            // Se mudou o dia, reseta o contador localmente
             if ($cliente['ultima_atualizacao_reset'] != $hoje) {
                 $resets = 0;
             }
@@ -96,9 +95,9 @@ if (isset($_POST['resetar_senha'])) {
         <div class="tab-content">
             <div class="tab-pane fade show active" id="tabLogin">
                 <form method="POST">
-                    <div class="mb-3 position-relative">
+                    <div class="mb-3">
                         <label>CPF do Cliente</label>
-                        <input type="text" id="cpf_login_visual" class="form-control cpf-mask" required placeholder="000.000.000-00" autocomplete="off">
+                        <input type="text" id="cpf_login_visual" class="form-control" required placeholder="000.000.000-00" autocomplete="off">
                         <input type="hidden" name="login_input" id="cpf_login_real">
                     </div>
                     <div class="mb-3">
@@ -114,7 +113,7 @@ if (isset($_POST['resetar_senha'])) {
                     <div class="mb-3">
                         <p class="text-muted small">Insira seu CPF para criar uma senha ou redefinir a atual caso tenha esquecido.</p>
                         <label>CPF do Cliente</label>
-                        <input type="text" id="cpf_reset_visual" class="form-control cpf-mask" required placeholder="000.000.000-00" autocomplete="off">
+                        <input type="text" id="cpf_reset_visual" class="form-control" required placeholder="000.000.000-00" autocomplete="off">
                         <input type="hidden" name="reset_input" id="cpf_reset_real">
                     </div>
                     <div class="mb-3">
@@ -138,41 +137,42 @@ if (isset($_POST['resetar_senha'])) {
 <script>
 document.addEventListener("DOMContentLoaded", function() {
     
-    function gerenciarMascarasE Ocultacao(idVisual, idReal) {
+    function gerenciarCpfMascarado(idVisual, idReal) {
         const inputVisual = document.getElementById(idVisual);
         const inputReal = document.getElementById(idReal);
         
-        // Aplica a máscara padrão enquanto digita
+        // Aplica formatação de CPF comum enquanto digita
         VMasker(inputVisual).maskPattern("999.999.999-99");
         
-        // Quando o usuário clica para digitar, mostra o valor limpo que estava guardado
+        // Quando o usuário volta a focar no campo para editar, mostra o CPF real digitado anteriormente
         inputVisual.addEventListener('focus', function() {
-            if(inputReal.value) {
+            if (inputReal.value) {
                 inputVisual.value = inputReal.value;
                 VMasker(inputVisual).maskPattern("999.999.999-99");
             }
         });
         
-        // Quando o usuário clica fora do campo, esconde os dígitos iniciais
+        // Quando o usuário clica fora do campo, armazena os dados reais e mascara visualmente com asteriscos
         inputVisual.addEventListener('blur', function() {
             let numeros = inputVisual.value.replace(/\D/g, '');
             
-            if(numeros.length === 11) {
-                // Guarda o CPF limpo estruturado no campo real para o PHP rodar correto
-                inputReal.value = inputVisual.value; 
+            if (numeros.length === 11) {
+                // Alimenta o input oculto com o valor limpo (só números) para enviar corretamente ao PHP
+                inputReal.value = numeros;
                 
-                // Mascara visualmente deixando apenas os últimos 2 números aparentes
-                // Formato final: ***.***.***-XX
-                inputVisual.value = `***.***.***-${numeros.substring(9, 11)}`;
+                // Exibe de forma segura escondendo os primeiros blocos: ***.***.839-11
+                let bloco3 = numeros.substring(6, 9);
+                let digitos = numeros.substring(9, 11);
+                inputVisual.value = `***.***.${bloco3}-${digitos}`;
             } else {
                 inputReal.value = "";
             }
         });
     }
 
-    // Inicializa a lógica nos dois blocos de inputs (Login e Reset)
-    gerenciarMascarasEOcultacao('cpf_login_visual', 'cpf_login_real');
-    gerenciarMascarasEOcultacao('cpf_reset_visual', 'cpf_reset_real');
+    // Ativa a regra de máscara visual separada nos dois formulários
+    gerenciarCpfMascarado('cpf_login_visual', 'cpf_login_real');
+    gerenciarCpfMascarado('cpf_reset_visual', 'cpf_reset_real');
 });
 </script>
 </body>
