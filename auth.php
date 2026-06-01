@@ -5,50 +5,13 @@ require_once 'config/funcoes.php';
 
 $mensagem = '';
 
-// --- 1. PRIMEIRO ACESSO (VERIFICAÇÃO) ---
-if (isset($_POST['verificar_primeiro_acesso'])) {
-    $identificador = preg_replace('/\D/', '', $_POST['identificador']); // Remove pontos/traços do CPF ou Telefone
-    
-    $stmt = $pdo->prepare("SELECT id, nome, cpf, telefone, senha FROM clientes_online WHERE cpf = :id OR telefone = :id");
-    $stmt->execute(['id' => $identificador]);
-    $cliente = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($cliente) {
-        if (!empty($cliente['senha'])) {
-            $mensagem = "Você já possui uma senha cadastrada. Use o formulário de login.";
-        } else {
-            $_SESSION['primeiro_acesso_id'] = $cliente['id'];
-            $_SESSION['primeiro_acesso_nome'] = $cliente['nome'];
-        }
-    } else {
-        $mensagem = "Nenhum cadastro encontrado com este CPF ou Telefone.";
-    }
-}
-
-// --- 2. CRIAR SENHA (PRIMEIRO ACESSO) ---
-if (isset($_POST['criar_senha'])) {
-    $senha = $_POST['nova_senha'];
-    $confirmar = $_POST['confirmar_senha'];
-    $id = $_SESSION['primeiro_acesso_id'] ?? null;
-
-    if ($id && $senha === $confirmar) {
-        $senhaHash = password_hash($senha, PASSWORD_DEFAULT);
-        $stmt = $pdo->prepare("UPDATE clientes_online SET senha = ? WHERE id = ?");
-        if ($stmt->execute([$senhaHash, $id])) {
-            $mensagem = "Senha criada com sucesso! Faça seu login.";
-            unset($_SESSION['primeiro_acesso_id'], $_SESSION['primeiro_acesso_nome']);
-        }
-    } else {
-        $mensagem = "As senhas não coincidem ou a sessão expirou.";
-    }
-}
-
-// --- 3. LOGIN ---
+// --- 1. LOGIN ---
 if (isset($_POST['login'])) {
     $login_input = preg_replace('/\D/', '', $_POST['login_input']);
     $senha = $_POST['senha'];
 
-    $stmt = $pdo->prepare("SELECT * FROM clientes_online WHERE cpf = :input OR telefone = :input");
+    // Validação focada estritamente no CPF
+    $stmt = $pdo->prepare("SELECT * FROM clientes_online WHERE cpf = :input");
     $stmt->execute(['input' => $login_input]);
     $cliente = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -62,7 +25,7 @@ if (isset($_POST['login'])) {
     }
 }
 
-// --- 4. RECUPERAÇÃO DE SENHA (RESET) ---
+// --- 2. RECUPERAÇÃO DE SENHA (RESET) ---
 if (isset($_POST['resetar_senha'])) {
     $identificador = preg_replace('/\D/', '', $_POST['reset_input']);
     $nova_senha = $_POST['nova_senha_reset'];
@@ -71,7 +34,8 @@ if (isset($_POST['resetar_senha'])) {
     if ($nova_senha !== $confirmar) {
         $mensagem = "As senhas não coincidem.";
     } else {
-        $stmt = $pdo->prepare("SELECT id, resets_hoje, ultima_atualizacao_reset FROM clientes_online WHERE cpf = :id OR telefone = :id");
+        // Validação focada estritamente no CPF
+        $stmt = $pdo->prepare("SELECT id, resets_hoje, ultima_atualizacao_reset FROM clientes_online WHERE cpf = :id");
         $stmt->execute(['id' => $identificador]);
         $cliente = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -96,7 +60,7 @@ if (isset($_POST['resetar_senha'])) {
                     'hoje' => $hoje,
                     'id' => $cliente['id']
                 ]);
-                $mensagem = "Senha redefinida com sucesso ($resets/15 hoje)!";
+                $mensagem = "Senha definida/redefinida com sucesso ($resets/15 hoje)!";
             }
         } else {
             $mensagem = "Usuário não localizado.";
@@ -126,16 +90,16 @@ if (isset($_POST['resetar_senha'])) {
 
         <ul class="nav nav-tabs mb-3" id="authTabs" role="tablist">
             <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabLogin">Login</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabPrimeiroAcesso">Primeiro Acesso</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabEsqueci">Esqueci Senha</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabEsqueci">Definir / Esqueci Senha</button></li>
         </ul>
 
         <div class="tab-content">
             <div class="tab-pane fade show active" id="tabLogin">
                 <form method="POST">
-                    <div class="mb-3">
-                        <label>CPF ou Telefone</label>
-                        <input type="text" name="login_input" class="form-control" required placeholder="Apenas números">
+                    <div class="mb-3 position-relative">
+                        <label>CPF do Cliente</label>
+                        <input type="text" id="cpf_login_visual" class="form-control cpf-mask" required placeholder="000.000.000-00" autocomplete="off">
+                        <input type="hidden" name="login_input" id="cpf_login_real">
                     </div>
                     <div class="mb-3">
                         <label>Senha</label>
@@ -145,37 +109,13 @@ if (isset($_POST['resetar_senha'])) {
                 </form>
             </div>
 
-            <div class="tab-pane fade" id="tabPrimeiroAcesso">
-                <?php if (!isset($_SESSION['primeiro_acesso_id'])): ?>
-                    <form method="POST">
-                        <p class="text-muted small">Se você já fez pedidos, digite seu CPF ou Telefone para criar uma senha.</p>
-                        <div class="mb-3">
-                            <label>CPF ou Telefone Cadastrado</label>
-                            <input type="text" name="identificador" class="form-control" required>
-                        </div>
-                        <button type="submit" name="verificar_primeiro_acesso" class="btn btn-warning w-100">Verificar Dados</button>
-                    </form>
-                <?php else: ?>
-                    <form method="POST">
-                        <p class="text-success">Olá, <strong><?= htmlspecialchars($_SESSION['primeiro_acesso_nome']) ?></strong>! Defina sua senha abaixo:</p>
-                        <div class="mb-3">
-                            <label>Nova Senha</label>
-                            <input type="password" name="nova_senha" class="form-control" required>
-                        </div>
-                        <div class="mb-3">
-                            <label>Confirmar Senha</label>
-                            <input type="password" name="confirmar_senha" class="form-control" required>
-                        </div>
-                        <button type="submit" name="criar_senha" class="btn btn-success w-100">Salvar Senha</button>
-                    </form>
-                <?php endif; ?>
-            </div>
-
             <div class="tab-pane fade" id="tabEsqueci">
                 <form method="POST">
                     <div class="mb-3">
-                        <label>CPF ou Telefone</label>
-                        <input type="text" name="reset_input" class="form-control" required>
+                        <p class="text-muted small">Insira seu CPF para criar uma senha ou redefinir a atual caso tenha esquecido.</p>
+                        <label>CPF do Cliente</label>
+                        <input type="text" id="cpf_reset_visual" class="form-control cpf-mask" required placeholder="000.000.000-00" autocomplete="off">
+                        <input type="hidden" name="reset_input" id="cpf_reset_real">
                     </div>
                     <div class="mb-3">
                         <label>Nova Senha</label>
@@ -185,12 +125,55 @@ if (isset($_POST['resetar_senha'])) {
                         <label>Confirmar Nova Senha</label>
                         <input type="password" name="confirmar_senha_reset" class="form-control" required>
                     </div>
-                    <button type="submit" name="resetar_senha" class="btn btn-danger w-100">Resetar Senha</button>
+                    <button type="submit" name="resetar_senha" class="btn btn-danger w-100">Salvar Nova Senha</button>
                 </form>
             </div>
         </div>
     </div>
 </div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vanilla-masker/1.2.0/vanilla-masker.min.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    
+    function gerenciarMascarasE Ocultacao(idVisual, idReal) {
+        const inputVisual = document.getElementById(idVisual);
+        const inputReal = document.getElementById(idReal);
+        
+        // Aplica a máscara padrão enquanto digita
+        VMasker(inputVisual).maskPattern("999.999.999-99");
+        
+        // Quando o usuário clica para digitar, mostra o valor limpo que estava guardado
+        inputVisual.addEventListener('focus', function() {
+            if(inputReal.value) {
+                inputVisual.value = inputReal.value;
+                VMasker(inputVisual).maskPattern("999.999.999-99");
+            }
+        });
+        
+        // Quando o usuário clica fora do campo, esconde os dígitos iniciais
+        inputVisual.addEventListener('blur', function() {
+            let numeros = inputVisual.value.replace(/\D/g, '');
+            
+            if(numeros.length === 11) {
+                // Guarda o CPF limpo estruturado no campo real para o PHP rodar correto
+                inputReal.value = inputVisual.value; 
+                
+                // Mascara visualmente deixando apenas os últimos 2 números aparentes
+                // Formato final: ***.***.***-XX
+                inputVisual.value = `***.***.***-${numeros.substring(9, 11)}`;
+            } else {
+                inputReal.value = "";
+            }
+        });
+    }
+
+    // Inicializa a lógica nos dois blocos de inputs (Login e Reset)
+    gerenciarMascarasEOcultacao('cpf_login_visual', 'cpf_login_real');
+    gerenciarMascarasEOcultacao('cpf_reset_visual', 'cpf_reset_real');
+});
+</script>
 </body>
 </html>
