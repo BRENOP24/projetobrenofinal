@@ -1,5 +1,5 @@
 <?php
-require_once 'config/sessao.php'; 
+require_once 'config/sessao_visitante.php'; 
 require_once 'config/conexao.php';
 require_once 'config/funcoes.php';
 
