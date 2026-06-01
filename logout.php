@@ -13,6 +13,6 @@ unset($_SESSION['cliente_logado']);
 // Se você tiver uma chave específica para o painel do cliente, limpe-a aqui também.
 
 // Redirecionamento explícito para a tela de login do CLIENTE no cardápio
-header("Location: auth.php");
+header("Location: cliente_online.php");
 exit;
 ?>
