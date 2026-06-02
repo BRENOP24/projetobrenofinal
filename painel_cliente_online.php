@@ -78,7 +78,7 @@ $historico = $stmtHist->fetchAll(PDO::FETCH_ASSOC);
                 <span class="navbar-text text-white me-3 mb-2 mb-lg-0">Olá, <?= htmlspecialchars($_SESSION['cliente_nome']) ?></span>
                 <div>
                     <a href="perfil.php" class="btn btn-outline-light btn-sm me-2">Meu Perfil</a>
-                    <a href="cardapio_online" class="btn btn-outline-light btn-sm me-2">Acessar Cardapio Online</a>
+                    <a href="cardapio_online.php" class="btn btn-outline-light btn-sm me-2">Acessar Cardapio Online</a>
                     <a href="logout.php" class="btn btn-danger btn-sm">Sair</a>
                 </div>
             </div>
