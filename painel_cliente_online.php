@@ -96,7 +96,7 @@ $historico = $stmtHist->fetchAll(PDO::FETCH_ASSOC);
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm py-3">
     <div class="container">
         <a class="navbar-brand fw-bold text-wrap" style="max-width: 60%; font-size: 1.1rem; letter-spacing: -0.5px;" href="#">
-            SAY NOW <span class="fw-light text-muted" style="font-size: 0.9rem;">| Painel</span>
+            SAY NOW - Pedidos Concluídos + Andamento <span class="fw-light text-muted" style="font-size: 0.9rem;">| Painel</span>
         </a>
         <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarPainel">
             <span class="navbar-toggler-icon"></span>
