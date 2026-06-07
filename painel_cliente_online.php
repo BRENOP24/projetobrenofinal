@@ -69,7 +69,7 @@ $historico = $stmtHist->fetchAll(PDO::FETCH_ASSOC);
 
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container">
-        <a class="navbar-brand text-wrap" style="max-width: 60%; font-size: 1rem;" href="#">SAY NOW</a>
+        <a class="navbar-brand text-wrap" style="max-width: 60%; font-size: 1rem;" href="#">SAY NOW Pedidos Conluidos + Andamento </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarPainel">
             <span class="navbar-toggler-icon"></span>
         </button>
