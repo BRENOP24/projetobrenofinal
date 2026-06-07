@@ -46,9 +46,35 @@ $historico = $stmtHist->fetchAll(PDO::FETCH_ASSOC);
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <title>Painel Cliente - Say Now</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>Painel Cliente - Say Now</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <style>
+        body { 
+            background: linear-gradient(135deg, #e0e8f5 0%, #f5f7fa 100%); 
+            min-height: 100vh;
+        }
+        
+        /* Customização dos painéis centrais */
+        .custom-card {
+            border: none !important;
+            border-radius: 1rem !important;
+            background-color: #ffffff;
+        }
+        
+        .card-header-custom {
+            border-top-left-radius: 1rem !important;
+            border-top-right-radius: 1rem !important;
+            border-bottom: none;
+            padding: 1rem 1.25rem;
+        }
+
+        /* Ajuste do foco de inputs de filtro */
+        .form-control:focus {
+            border-color: #0d6efd;
+            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15);
+        }
+
         /* Ajuste responsivo para o Stepper que vem da API */
         .stepper { display: flex; justify-content: space-between; position: relative; margin-bottom: 25px; }
         .stepper::before { content: ""; position: absolute; top: 18px; left: 0; width: 100%; height: 4px; background: #e0e0e0; z-index: 1; }
@@ -65,101 +91,126 @@ $historico = $stmtHist->fetchAll(PDO::FETCH_ASSOC);
         }
     </style>
 </head>
-<body class="bg-light">
+<body>
 
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm py-3">
     <div class="container">
-        <a class="navbar-brand text-wrap" style="max-width: 60%; font-size: 1rem;" href="#">SAY NOW Pedidos Conluidos + Andamento </a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarPainel">
+        <a class="navbar-brand fw-bold text-wrap" style="max-width: 60%; font-size: 1.1rem; letter-spacing: -0.5px;" href="#">
+            SAY NOW <span class="fw-light text-muted" style="font-size: 0.9rem;">| Painel</span>
+        </a>
+        <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarPainel">
             <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse justify-content-end" id="navbarPainel">
-            <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center mt-2 mt-lg-0">
-                <span class="navbar-text text-white me-3 mb-2 mb-lg-0">Olá, <?= htmlspecialchars($_SESSION['cliente_nome']) ?></span>
-                <div>
-                    <a href="perfil.php" class="btn btn-outline-light btn-sm me-2">Meu Perfil</a>
-                    <a href="cardapio_online.php" class="btn btn-outline-light btn-sm me-2">Acessar Cardapio Online</a>
-                    <a href="logout.php" class="btn btn-danger btn-sm">Sair</a>
+            <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center mt-3 mt-lg-0">
+                <span class="navbar-text text-white me-lg-4 mb-3 mb-lg-0 fw-medium">
+                    Olá, <span class="text-info"><?= htmlspecialchars($_SESSION['cliente_nome']) ?></span>
+                </span>
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="perfil.php" class="btn btn-sm btn-outline-light rounded-2 px-3">Meu Perfil</a>
+                    <a href="cardapio_online.php" class="btn btn-sm btn-primary rounded-2 px-3 fw-semibold">Acessar Cardápio</a>
+                    <a href="logout.php" class="btn btn-sm btn-danger rounded-2 px-3">Sair</a>
                 </div>
             </div>
         </div>
     </div>
 </nav>
 
-<div class="container my-4">
+<div class="container my-5">
+    
     <div class="row g-3 mb-4">
-        <div class="col-12 col-md-4">
-            <div class="card p-3 shadow-sm bg-white h-100">
-                <h6 class="text-muted">Total de Pedidos</h6>
-                <h3><?= $resumo['total_pedidos'] ?></h3>
+        <div class="col-12 col-sm-4">
+            <div class="card custom-card p-4 shadow-sm h-100">
+                <h6 class="text-uppercase text-muted fw-bold small mb-2" style="letter-spacing: 0.5px;">Total de Pedidos</h6>
+                <h2 class="fw-bold m-0 text-dark"><?= $resumo['total_pedidos'] ?></h2>
             </div>
         </div>
-        <div class="col-12 col-md-4">
-            <div class="card p-3 shadow-sm bg-white h-100">
-                <h6 class="text-muted">Total Gasto Histórico</h6>
-                <h3>R$ <?= number_format($resumo['total_gasto'], 2, ',', '.') ?></h3>
+        <div class="col-12 col-sm-4">
+            <div class="card custom-card p-4 shadow-sm h-100">
+                <h6 class="text-uppercase text-muted fw-bold small mb-2" style="letter-spacing: 0.5px;">Total Gasto Histórico</h6>
+                <h2 class="fw-bold m-0 text-success">R$ <?= number_format($resumo['total_gasto'], 2, ',', '.') ?></h2>
             </div>
         </div>
-        <div class="col-12 col-md-4">
-            <div class="card p-3 shadow-sm bg-white h-100">
-                <h6 class="text-muted">Último Pedido</h6>
-                <h3><?= $ultimoPedido ? date('d/m/Y', strtotime($ultimoPedido['data_pedido'])) : 'Nenhum' ?></h3>
+        <div class="col-12 col-sm-4">
+            <div class="card custom-card p-4 shadow-sm h-100">
+                <h6 class="text-uppercase text-muted fw-bold small mb-2" style="letter-spacing: 0.5px;">Último Pedido</h6>
+                <h2 class="fw-bold m-0 text-primary" style="font-size: 1.6rem; padding-top: 2px;">
+                    <?= $ultimoPedido ? date('d/m/Y', strtotime($ultimoPedido['data_pedido'])) : 'Nenhum' ?>
+                </h2>
             </div>
         </div>
     </div>
 
-    <div class="card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white fw-bold">Acompanhamento em Tempo Real (Pedidos Ativos)</div>
-        <div class="card-body" id="container-pedidos-ativos">
-            <p class="text-muted text-center">Buscando updates de pedidos ativos...</p>
+    <div class="card custom-card shadow-sm mb-4">
+        <div class="card-header-custom bg-primary text-white fw-bold d-flex align-items-center">
+            <span>Acompanhamento em Tempo Real (Pedidos Ativos)</span>
+        </div>
+        <div class="card-body p-4" id="container-pedidos-ativos">
+            <div class="text-center py-3">
+                <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                <span class="text-muted small">Buscando updates de pedidos ativos...</span>
+            </div>
         </div>
     </div>
 
-    <div class="card shadow-sm">
-        <div class="card-header bg-secondary text-white fw-bold">Histórico de Compras (Concluídos e Cancelados)</div>
-        <div class="card-body">
-            <form method="GET" class="row g-2 mb-4">
+    <div class="card custom-card shadow-sm">
+        <div class="card-header-custom bg-secondary text-white fw-bold">
+            Histórico de Compras (Concluídos e Cancelados)
+        </div>
+        <div class="card-body p-4">
+            
+            <form method="GET" class="row g-3 mb-4 align-items-end">
                 <div class="col-6 col-md-3">
-                    <label class="small fw-bold">Data Inicial</label>
-                    <input type="date" name="data_inicio" class="form-control form-control-sm" value="<?= $_GET['data_inicio'] ?? '' ?>">
+                    <label class="form-label small fw-semibold text-secondary">Data Inicial</label>
+                    <input type="date" name="data_inicio" class="form-control rounded-3" value="<?= $_GET['data_inicio'] ?? '' ?>">
                 </div>
                 <div class="col-6 col-md-3">
-                    <label class="small fw-bold">Data Final</label>
-                    <input type="date" name="data_fim" class="form-control form-control-sm" value="<?= $_GET['data_fim'] ?? '' ?>">
+                    <label class="form-label small fw-semibold text-secondary">Data Final</label>
+                    <input type="date" name="data_fim" class="form-control rounded-3" value="<?= $_GET['data_fim'] ?? '' ?>">
                 </div>
                 <div class="col-12 col-md-3">
-                    <label class="small fw-bold">Nº Pedido</label>
-                    <input type="number" name="num_pedido" class="form-control form-control-sm" placeholder="Ex: 1042" value="<?= $_GET['num_pedido'] ?? '' ?>">
+                    <label class="form-label small fw-semibold text-secondary">Nº Pedido</label>
+                    <input type="number" name="num_pedido" class="form-control rounded-3" placeholder="Ex: 1042" value="<?= $_GET['num_pedido'] ?? '' ?>">
                 </div>
-                <div class="col-12 col-md-3 d-grid d-md-block align-items-end">
-                    <button type="submit" class="btn btn-sm btn-dark w-100">Filtrar Histórico</button>
+                <div class="col-12 col-md-3">
+                    <button type="submit" class="btn btn-dark w-100 rounded-3 fw-semibold py-2">Filtrar Histórico</button>
                 </div>
             </form>
 
-            <div class="table-responsive">
-                <table class="table table-hover align-middle" style="min-width: 600px;">
-                    <thead class="table-light">
+            <div class="table-responsive rounded-3 border">
+                <table class="table table-hover align-middle mb-0" style="min-width: 650px;">
+                    <thead class="table-light text-secondary small text-uppercase">
                         <tr>
-                            <th>Nº Pedido</th>
+                            <th class="ps-3">Nº Pedido</th>
                             <th>Data</th>
                             <th>Valor Total</th>
                             <th>Status</th>
-                            <th>Ações</th>
+                            <th class="text-end pe-3">Ações</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if(empty($historico)): ?>
-                            <tr><td colspan="5" class="text-center text-muted">Nenhum pedido encontrado.</td></tr>
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">Nenhum pedido localizado no período.</td>
+                            </tr>
                         <?php else: ?>
                             <?php foreach($historico as $ped): 
-                                $badgeClasse = ($ped['status'] === 'Cancelado') ? 'bg-danger' : 'bg-success';
+                                $badgeClasse = ($ped['status'] === 'Cancelado') ? 'bg-danger-subtle text-danger' : 'bg-success-subtle text-success';
                             ?>
                                 <tr>
-                                    <td><strong>#<?= $ped['id'] ?></strong></td>
-                                    <td><?= date('d/m/Y H:i', strtotime($ped['data_pedido'])) ?></td>
-                                    <td>R$ <?= number_format($ped['valor_total'], 2, ',', '.') ?></td>
-                                    <td><span class="badge <?= $badgeClasse ?>"><?= htmlspecialchars($ped['status']) ?></span></td>
-                                    <td><button class="btn btn-sm btn-outline-primary" onclick="abrirDetalhes(<?= $ped['id'] ?>)">Ver Detalhes</button></td>
+                                    <td class="ps-3"><strong>#<?= $ped['id'] ?></strong></td>
+                                    <td class="text-secondary small"><?= date('d/m/Y H:i', strtotime($ped['data_pedido'])) ?></td>
+                                    <td class="fw-semibold">R$ <?= number_format($ped['valor_total'], 2, ',', '.') ?></td>
+                                    <td>
+                                        <span class="badge <?= $badgeClasse ?> px-2.5 py-1.5 rounded-2 fw-semibold" style="font-size: 0.8rem;">
+                                            <?= htmlspecialchars($ped['status']) ?>
+                                        </span>
+                                    </td>
+                                    <td class="text-end pe-3">
+                                        <button class="btn btn-sm btn-outline-primary rounded-2 px-3" onclick="abrirDetalhes(<?= $ped['id'] ?>)">
+                                            Ver Detalhes
+                                        </button>
+                                    </td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
@@ -173,8 +224,8 @@ $historico = $stmtHist->fetchAll(PDO::FETCH_ASSOC);
 
 <div class="modal fade" id="modalDetalhes" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content" id="conteudo-modal-detalhes">
-        </div>
+        <div class="modal-content rounded-4 border-0 shadow" id="conteudo-modal-detalhes">
+            </div>
     </div>
 </div>
 
