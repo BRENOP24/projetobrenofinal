@@ -91,7 +91,7 @@ if (isset($_POST['resetar_senha'])) {
 
         <ul class="nav nav-tabs nav-fill mb-3" id="authTabs" role="tablist">
             <li class="nav-item"><button class="nav-link active fw-bold" data-bs-toggle="tab" data-bs-target="#tabLogin">Login</button></li>
-            <li class="nav-item"><button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#tabEsqueci">Mudar / Esqueci Senha</button></li>
+            <li class="nav-item"><button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#tabEsqueci">Primeiro Acesso / Esqueci Senha</button></li>
         </ul>
 
         <div class="tab-content mt-4">
