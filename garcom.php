@@ -1,7 +1,10 @@
 <?php
+require_once 'config/conexao.php';
 require_once 'config/sessao.php';
 require_once 'config/funcoes.php';
-
+echo '<pre>';
+var_dump($_SESSION['nivel']);
+exit;
 // 🔒 Só garçom entra
 exigirNivel(['garcom']);
 ?>
