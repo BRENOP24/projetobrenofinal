@@ -123,3 +123,17 @@ function processarEstornoSeguro($pdo, $tipo, $id_registro, $usuario_id, $motivo)
         return $e->getMessage();
     }
 }
+
+function exigirNivel($niveisPermitidos = []) {
+
+    $nivelUsuario = strtolower(trim(nivelUsuario()));
+
+    $niveisPermitidos = array_map(function($nivel){
+        return strtolower(trim($nivel));
+    }, $niveisPermitidos);
+
+    if (!usuarioLogado() || !in_array($nivelUsuario, $niveisPermitidos)) {
+        header("Location: dashboard.php?erro=acesso_negado");
+        exit;
+    }
+}
