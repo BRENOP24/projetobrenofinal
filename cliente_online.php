@@ -10,7 +10,6 @@ if (isset($_POST['login'])) {
     $login_input = preg_replace('/\D/', '', $_POST['login_input']);
     $senha = $_POST['senha'];
 
-    // Consulta focada estritamente no CPF
     $stmt = $pdo->prepare("SELECT * FROM clientes_online WHERE cpf = :input");
     $stmt->execute(['input' => $login_input]);
     $cliente = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -34,7 +33,6 @@ if (isset($_POST['resetar_senha'])) {
     if ($nova_senha !== $confirmar) {
         $mensagem = "As senhas não coincidem.";
     } else {
-        // Consulta focada estritamente no CPF
         $stmt = $pdo->prepare("SELECT id, resets_hoje, ultima_atualizacao_reset FROM clientes_online WHERE cpf = :id");
         $stmt->execute(['id' => $identificador]);
         $cliente = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -71,62 +69,104 @@ if (isset($_POST['resetar_senha'])) {
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <title>Cardápio Online - Área do Cliente</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>Cardápio Online - Área do Cliente</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <style>
-        body { background-color: #f8f9fa; }
-        .auth-card { max-width: 450px; margin: 20px auto; }
-        @media (min-width: 768px) {
-            .auth-card { margin: 80px auto; } /* Mais espaçamento no topo apenas em telas grandes */
+        body { 
+            /* Fundo moderno em degradê suave */
+            background: linear-gradient(135deg, #e0e8f5 0%, #f5f7fa 100%); 
+            min-height: 100vh;
+        }
+        .auth-card { 
+            max-width: 460px; 
+            width: 100%;
+            border: none !important;
+            border-radius: 1.25rem !important; /* Bordas mais suaves */
+            background-color: #ffffff;
+        }
+        /* Estilização moderna para as abas de navegação */
+        .nav-pills .nav-link {
+            color: #6c757d;
+            border-radius: 0.75rem;
+            padding: 10px 15px;
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+        }
+        .nav-pills .nav-link.active {
+            background-color: #0d6efd;
+            box-shadow: 0 4px 12px rgba(13, 110, 253, 0.25);
+        }
+        /* Efeito de foco mais limpo nos campos de texto */
+        .form-control:focus {
+            border-color: #0d6efd;
+            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15);
         }
     </style>
 </head>
 <body>
-<div class="container px-3"> <div class="card auth-card shadow-sm p-4">
-        <h2 class="text-center mb-4 text-primary fw-bold" style="font-size: 1.75rem;">Área do Cliente</h2>
+
+<div class="container min-vh-100 d-flex align-items-center justify-content-center py-4 px-3"> 
+    <div class="card auth-card shadow-lg p-4 p-sm-5">
+        
+        <h2 class="text-center mb-4 text-primary fw-bold" style="font-size: 1.85rem; letter-spacing: -0.5px;">
+            Área do Cliente
+        </h2>
         
         <?php if(!empty($mensagem)): ?>
-            <div class="alert alert-info text-center small"><?= htmlspecialchars($mensagem) ?></div>
+            <div class="alert alert-info text-center border-0 small mb-4 rounded-3" style="background-color: #e7f1ff; color: #0c4128;">
+                <?= htmlspecialchars($mensagem) ?>
+            </div>
         <?php endif; ?>
 
-        <ul class="nav nav-tabs nav-fill mb-3" id="authTabs" role="tablist">
-            <li class="nav-item"><button class="nav-link active fw-bold" data-bs-toggle="tab" data-bs-target="#tabLogin">Login</button></li>
-            <li class="nav-item"><button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#tabEsqueci">Primeiro Acesso / Esqueci Senha</button></li>
+        <ul class="nav nav-pills nav-fill bg-light p-1 rounded-3 mb-4" id="authTabs" role="tablist">
+            <li class="nav-item">
+                <button class="nav-link active fw-semibold" data-bs-toggle="tab" data-bs-target="#tabLogin">Login</button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link fw-semibold" data-bs-toggle="tab" data-bs-target="#tabEsqueci">Esqueci Senha</button>
+            </li>
         </ul>
 
-        <div class="tab-content mt-4">
+        <div class="tab-content">
             <div class="tab-pane fade show active" id="tabLogin">
                 <form method="POST">
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">CPF do Cliente</label>
-                        <input type="text" id="cpf_login_visual" class="form-control form-control-lg" required placeholder="000.000.000-00" autocomplete="off" inputmode="numeric">
+                        <label class="form-label fw-semibold text-secondary small">CPF do Cliente</label>
+                        <input type="text" id="cpf_login_visual" class="form-control form-control-lg rounded-3" style="font-size: 1rem;" required placeholder="000.000.000-00" autocomplete="off" inputmode="numeric">
                         <input type="hidden" name="login_input" id="cpf_login_real">
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Senha</label>
-                        <input type="password" name="senha" class="form-control form-control-lg" required placeholder="Digite sua senha">
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold text-secondary small">Senha</label>
+                        <input type="password" name="senha" class="form-control form-control-lg rounded-3" style="font-size: 1rem;" required placeholder="Digite sua senha">
                     </div>
-                    <button type="submit" name="login" class="btn btn-primary btn-lg w-100 mt-2">Entrar</button>
+                    <button type="submit" name="login" class="btn btn-primary btn-lg w-100 rounded-3 fw-semibold shadow-sm py-2" style="font-size: 1.05rem;">
+                        Entrar
+                    </button>
                 </form>
             </div>
 
             <div class="tab-pane fade" id="tabEsqueci">
                 <form method="POST">
                     <div class="mb-3">
-                        <p class="text-muted small bg-light p-2 rounded border">Insira seu CPF para criar uma senha ou redefinir a atual caso tenha esquecido.</p>
-                        <label class="form-label fw-semibold">CPF do Cliente</label>
-                        <input type="text" id="cpf_reset_visual" class="form-control form-control-lg" required placeholder="000.000.000-00" autocomplete="off" inputmode="numeric">
+                        <div class="alert bg-light border text-muted small rounded-3 p-3 mb-3">
+                            Insira seu CPF para criar uma senha ou redefinir a atual caso tenha esquecido.
+                        </div>
+                        <label class="form-label fw-semibold text-secondary small">CPF do Cliente</label>
+                        <input type="text" id="cpf_reset_visual" class="form-control form-control-lg rounded-3" style="font-size: 1rem;" required placeholder="000.000.000-00" autocomplete="off" inputmode="numeric">
                         <input type="hidden" name="reset_input" id="cpf_reset_real">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Nova Senha</label>
-                        <input type="password" name="nova_senha_reset" class="form-control form-control-lg" required placeholder="Mínimo 6 caracteres">
+                        <label class="form-label fw-semibold text-secondary small">Nova Senha</label>
+                        <input type="password" name="nova_senha_reset" class="form-control form-control-lg rounded-3" style="font-size: 1rem;" required placeholder="Mínimo 6 caracteres">
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Confirmar Nova Senha</label>
-                        <input type="password" name="confirmar_senha_reset" class="form-control form-control-lg" required placeholder="Repita a nova senha">
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold text-secondary small">Confirmar Nova Senha</label>
+                        <input type="password" name="confirmar_senha_reset" class="form-control form-control-lg rounded-3" style="font-size: 1rem;" required placeholder="Repita a nova senha">
                     </div>
-                    <button type="submit" name="resetar_senha" class="btn btn-danger btn-lg w-100 mt-2">Salvar Nova Senha</button>
+                    <button type="submit" name="resetar_senha" class="btn btn-danger btn-lg w-100 rounded-3 fw-semibold shadow-sm py-2" style="font-size: 1.05rem;">
+                        Salvar Nova Senha
+                    </button>
                 </form>
             </div>
         </div>
@@ -138,7 +178,6 @@ if (isset($_POST['resetar_senha'])) {
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-    
     function gerenciarCpfMascarado(idVisual, idReal) {
         const inputVisual = document.getElementById(idVisual);
         const inputReal = document.getElementById(idReal);
