@@ -33,7 +33,7 @@ $caixas = $stmt->fetchAll();
     <title>Estorno de Vendas - Gestão Breno</title>
     <link rel="stylesheet" href="css/style.css">
     <style>
-        /* Variáveis Dinâmicas de CSS */
+        /* Centralização de variáveis para CSS Dinâmico */
         :root {
             --primary-color: #007bff;
             --danger-color: #dc3545;
@@ -41,6 +41,8 @@ $caixas = $stmt->fetchAll();
             --border-color: #dee2e6;
             --text-muted: #666;
             --radius: 8px;
+            --btn-padding-y: 6px;
+            --btn-padding-x: 14px;
         }
 
         .container-fluid { max-width: 1200px; margin: auto; background: #fff; padding: 20px; border-radius: var(--radius); }
@@ -49,25 +51,32 @@ $caixas = $stmt->fetchAll();
         .filter-group label { font-size: 0.8rem; font-weight: bold; margin-bottom: 5px; }
         
         /* Botões Base */
-        .btn-pequeno { padding: 4px 10px; font-size: 0.75rem; border-radius: 4px; cursor: pointer; border: none; font-weight: bold; transition: opacity 0.2s; }
+        .btn-pequeno { padding: var(--btn-padding-y) var(--btn-padding-x); font-size: 0.75rem; border-radius: 4px; cursor: pointer; border: none; font-weight: bold; transition: opacity 0.2s; }
         .btn-pequeno:hover { opacity: 0.9; }
         
-        .btn-filtrar { background: var(--primary-color); color: white; height: 35px; }
+        .btn-filtrar { background: var(--primary-color); color: white; height: 35px; width: auto; }
         
-        /* Botão de Cancelar/Estornar Ajustado e Alinhado */
+        /* Botão de Estornar Corrigido: 
+           width: auto !important impede que o style.css force o botão a ocupar a tela toda
+        */
         .btn-cancelar { 
             background: var(--danger-color); 
             color: white; 
-            padding: 2px 8px; 
-            font-size: 0.7rem; 
-            height: fit-content;
+            padding: var(--btn-padding-y) var(--btn-padding-x) !important;
+            font-size: 0.75rem !important; 
+            width: auto !important; 
+            min-width: 90px;
+            text-align: center;
+            line-height: 1;
+            height: auto !important;
+            display: inline-block;
         }
         
         .caixa-section { border: 1px solid var(--border-color); border-radius: var(--radius); margin-bottom: 15px; overflow: hidden; }
         .caixa-header { background: #e9ecef; padding: 10px 15px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
         .caixa-header:hover { background: var(--border-color); }
         
-        /* Alinhamento perfeito da linha de vendas */
+        /* Layout flexível alinhado verticalmente ao centro */
         .venda-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 15px; border-bottom: 1px solid #f1f1f1; font-size: 0.9rem; }
         .venda-row:last-child { border-bottom: none; }
         .venda-info { display: flex; gap: 20px; color: #444; align-items: center; }
