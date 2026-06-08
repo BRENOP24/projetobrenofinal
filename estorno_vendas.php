@@ -33,22 +33,44 @@ $caixas = $stmt->fetchAll();
     <title>Estorno de Vendas - Gestão Breno</title>
     <link rel="stylesheet" href="css/style.css">
     <style>
-        .container-fluid { max-width: 1200px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; }
-        .filter-row { display: flex; gap: 15px; align-items: flex-end; background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e9ecef; }
+        /* Variáveis Dinâmicas de CSS */
+        :root {
+            --primary-color: #007bff;
+            --danger-color: #dc3545;
+            --bg-light: #f8f9fa;
+            --border-color: #dee2e6;
+            --text-muted: #666;
+            --radius: 8px;
+        }
+
+        .container-fluid { max-width: 1200px; margin: auto; background: #fff; padding: 20px; border-radius: var(--radius); }
+        .filter-row { display: flex; gap: 15px; align-items: flex-end; background: var(--bg-light); padding: 15px; border-radius: var(--radius); margin-bottom: 20px; border: 1px solid #e9ecef; }
         .filter-group { display: flex; flex-direction: column; }
         .filter-group label { font-size: 0.8rem; font-weight: bold; margin-bottom: 5px; }
         
-        .btn-pequeno { padding: 4px 10px; font-size: 0.75rem; border-radius: 4px; cursor: pointer; border: none; font-weight: bold; }
-        .btn-filtrar { background: #007bff; color: white; height: 35px; }
-        .btn-cancelar { background: #dc3545; color: white; float: right; }
+        /* Botões Base */
+        .btn-pequeno { padding: 4px 10px; font-size: 0.75rem; border-radius: 4px; cursor: pointer; border: none; font-weight: bold; transition: opacity 0.2s; }
+        .btn-pequeno:hover { opacity: 0.9; }
         
-        .caixa-section { border: 1px solid #dee2e6; border-radius: 8px; margin-bottom: 15px; overflow: hidden; }
+        .btn-filtrar { background: var(--primary-color); color: white; height: 35px; }
+        
+        /* Botão de Cancelar/Estornar Ajustado e Alinhado */
+        .btn-cancelar { 
+            background: var(--danger-color); 
+            color: white; 
+            padding: 2px 8px; 
+            font-size: 0.7rem; 
+            height: fit-content;
+        }
+        
+        .caixa-section { border: 1px solid var(--border-color); border-radius: var(--radius); margin-bottom: 15px; overflow: hidden; }
         .caixa-header { background: #e9ecef; padding: 10px 15px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
-        .caixa-header:hover { background: #dee2e6; }
+        .caixa-header:hover { background: var(--border-color); }
         
+        /* Alinhamento perfeito da linha de vendas */
         .venda-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 15px; border-bottom: 1px solid #f1f1f1; font-size: 0.9rem; }
         .venda-row:last-child { border-bottom: none; }
-        .venda-info { display: flex; gap: 20px; color: #444; }
+        .venda-info { display: flex; gap: 20px; color: #444; align-items: center; }
         .status-badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 10px; background: #eee; }
     </style>
 </head>
@@ -60,7 +82,6 @@ $caixas = $stmt->fetchAll();
         <a href="dashboard.php" class="btn-voltar">⬅ Voltar</a>
     </div>
 
-    <!-- Filtro por Período -->
     <form method="GET" class="filter-row">
         <div class="filter-group">
             <label>Data Inicial</label>
@@ -74,7 +95,7 @@ $caixas = $stmt->fetchAll();
     </form>
 
     <?php if (empty($caixas)): ?>
-        <p style="text-align:center; color:#666; padding:20px;">Nenhum caixa conferido encontrado neste período.</p>
+        <p style="text-align:center; color: var(--text-muted); padding:20px;">Nenhum caixa conferido encontrado neste período.</p>
     <?php endif; ?>
 
     <?php foreach ($caixas as $caixa): ?>
@@ -113,7 +134,7 @@ $caixas = $stmt->fetchAll();
                             <span>💰 R$ <?= number_format($v['valor_total'], 2, ',', '.') ?></span>
                             <span>💳 <?= $v['pgto'] ?></span>
                             <?php if($v['status'] === 'cancelado'): ?>
-                                <span class="status-badge" style="color:#dc3545;">CANCELADA</span>
+                                <span class="status-badge" style="color: var(--danger-color);">CANCELADA</span>
                             <?php endif; ?>
                         </div>
                         
