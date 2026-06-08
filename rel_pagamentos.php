@@ -28,9 +28,10 @@ $total_quantidade = 0;
 // QUERY BASE PEDIDOS (LOCAL)
 // ===========================
 
+// Incluído 'mesa' e 'comanda' no IN para computar no faturamento local
 $where = "
 WHERE p.data_pedido BETWEEN ? AND ?
-AND p.origem_tipo IN ('balcao', 'delivery')
+AND p.origem_tipo IN ('balcao', 'delivery', 'mesa', 'comanda')
 ";
 
 $params = [$inicio, $fim];
@@ -43,12 +44,14 @@ if(!$incluir_cancelados){
     $where .= " AND LOWER(p.situacao) != 'cancelado'";
 }
 
+// Adicionado p.origem_id na consulta
 $sql = "
 SELECT 
     p.id,
     p.data_pedido,
     p.valor_total,
     p.origem_tipo,
+    p.origem_id,
     p.situacao,
     c.nome as cliente_nome,
     COALESCE(fp.descricao, 'Não Informado') as forma_pagamento
@@ -90,7 +93,6 @@ if($incluir_online){
 
     $params_online = [$inicio, $fim];
 
-    // No online a coluna do banco chama-se 'status' (visto no print 2)
     if($somente_finalizados){
         $where_online .= " AND LOWER(p.status) = 'finalizado'";
     }
@@ -99,7 +101,6 @@ if($incluir_online){
         $where_online .= " AND LOWER(p.status) != 'cancelado'";
     }
 
-    // CORREÇÃO AQUI: p.origem em vez de p.origem_tipo
     $sql_online = "
     SELECT 
         p.id,
@@ -107,6 +108,7 @@ if($incluir_online){
         p.valor_total,
         p.status as situacao,
         p.origem as origem_tipo, 
+        NULL as origem_id,
         co.nome as cliente_nome,
         COALESCE(fp.descricao, 'Não Informado') as forma_pagamento
     FROM pedidos_online p
@@ -121,7 +123,6 @@ if($incluir_online){
     $pedidos_online = $stmt_online->fetchAll(PDO::FETCH_ASSOC);
 
     foreach($pedidos_online as $p){
-        // Evita que IDs iguais entre local e online substituam ou dupliquem registros erroneamente
         $forma = $p['forma_pagamento'];
 
         if(!isset($dados_pagamentos[$forma])){
@@ -192,6 +193,8 @@ tbody tr:hover{ background:#f8fbff; }
 .badge{ background:#e0f2fe; color:#0369a1; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:600; }
 .badge-origem { background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
 .origem-site { background: #fef9c3; color: #854d0e; }
+.bg-mesa { background: #ebf8ff; color: #2b6cb0; }
+.bg-comanda { background: #faf5ff; color: #6b46c1; }
 
 .valor-verde{ color:#16a34a; font-weight:700; }
 .detalhes{ background:#f8fafc; }
@@ -306,8 +309,9 @@ tbody tr:hover{ background:#f8fbff; }
                                     <tr>
                                         <th>Pedido</th>
                                         <th>Data/Hora</th>
+                                        <th>Origem</th>
+                                        <th>Identificação</th>
                                         <th>Cliente</th>
-                                        <th>Canal</th>
                                         <th>Situação</th>
                                         <th style="text-align: right;">Valor</th>
                                     </tr>
@@ -315,16 +319,26 @@ tbody tr:hover{ background:#f8fbff; }
                                 <tbody>
                                 <?php foreach($pedidos_detalhados[$forma] as $pedido): 
                                     $origem_nome = $pedido['origem_tipo'] ?? 'Não Informado';
+                                    $origem_id = $pedido['origem_id'] ?? null;
+                                    
+                                    // Define a classe CSS de acordo com a origem
+                                    $classe_badge = 'badge-origem';
+                                    if (strtolower($origem_nome) === 'site') $classe_badge .= ' origem-site';
+                                    if (strtolower($origem_nome) === 'mesa') $classe_badge .= ' bg-mesa';
+                                    if (strtolower($origem_nome) === 'comanda') $classe_badge .= ' bg-comanda';
                                 ?>
                                     <tr>
                                         <td>#<?= str_pad($pedido['id'], 5, '0', STR_PAD_LEFT) ?></td>
                                         <td><?= date('d/m/Y H:i', strtotime($pedido['data_pedido'])) ?></td>
-                                        <td><?= htmlspecialchars($pedido['cliente_nome'] ?: 'Consumidor Final') ?></td>
                                         <td>
-                                            <span class="badge-origem <?= strtolower($origem_nome) === 'site' ? 'origem-site' : '' ?>">
+                                            <span class="<?= $classe_badge ?>">
                                                 <?= htmlspecialchars($origem_nome) ?>
                                             </span>
                                         </td>
+                                        <td style="font-weight: bold;">
+                                            <?= $origem_id ? '# ' . $origem_id : '-' ?>
+                                        </td>
+                                        <td><?= htmlspecialchars($pedido['cliente_nome'] ?: 'Consumidor Final') ?></td>
                                         <td><?= htmlspecialchars($pedido['situacao'] ?? 'Misto') ?></td>
                                         <td class="valor-verde" style="text-align: right;">R$ <?= number_format($pedido['valor_total'], 2, ',', '.') ?></td>
                                     </tr>
