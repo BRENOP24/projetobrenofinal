@@ -193,6 +193,7 @@ if ($_SESSION['nivel'] === 'garcom') {
                     <ul class="submenu">
                         <li><a href="conferencia_caixas.php" target="conteudo">🕵️ Conferência Caixas</a></li>
                         <li><a href="auditoria_caixas.php" target="conteudo">🛡️ Auditoria de Caixa - Relatorios</a></li>
+                        <li><a href="relatorio_dfc.php" target="conteudo">📊 Demonstração do Fluxo de Caixa (DFC)</a></li>
                         <li><a href="estorno_vendas.php" target="conteudo">🔄 Estorno de Caixas Conferidos - Cancelamentos</a></li>
 
                         
