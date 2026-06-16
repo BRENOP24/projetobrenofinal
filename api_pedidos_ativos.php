@@ -41,7 +41,7 @@ $passos = [
 
 foreach ($ativos as $pedido):
     $passoAtual = $passos[$pedido['status']] ?? 1;
-    $tipoEntrega = (!empty($pedido['endereco_entrega'])) ? '🔒 Delivery' : '🏃 Retirada no Balcão';
+    $tipoEntrega = ($pedido['tipo_entrega'] === 'entrega') ? '🔒 Delivery' : '🏃 Retirada no Balcão';
 ?>
     <div class="border rounded p-3 mb-3 bg-white shadow-xs">
         <div class="d-flex justify-content-between align-items-center mb-3">

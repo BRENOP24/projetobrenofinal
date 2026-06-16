@@ -600,7 +600,7 @@ body{
         <div id="alerta-sucesso-container" class="alerta-sucesso-pedido">
             <h3>🎉 Pedido Confirmado!</h3>
             <p>Faça login no seu perfil para acompanhar o andamento do seu pedido em tempo real.</p>
-            <a href="auth.php" class="btn-alerta-login">Fazer Login / Acompanhar</a>
+            <a href="cliente_online.php" class="btn-alerta-login">Fazer Login / Acompanhar</a>
         </div>
 
         <div id="form-checkout-container">
