@@ -38,8 +38,8 @@ try {
 // 3. PROCESSA O CADASTRO
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['btn_cadastrar'])) {
     try {
-        $sql = "INSERT INTO clientes (nome, cpf_cnpj, telefone, email, cep, endereco, numero, bairro, city, possui_convenio, nome_convenio) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+$sql = "INSERT INTO clientes (nome, cpf_cnpj, telefone, email, cep, endereco, numero, bairro, cidade, possui_convenio, nome_convenio) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $pdo->prepare($sql);
         
         $stmt->execute([

@@ -173,6 +173,7 @@ if ($_SESSION['nivel'] === 'garcom') {
                     <a href="javascript:void(0)" class="nav-link dropdown-btn"><i class="fas fa-cash-register"></i> Faturamento <i class="fas fa-chevron-down arrow"></i></a>
                     <ul class="submenu">
                         <li><a href="caixas.php" target="conteudo">🏧 Abertura / Fechamento</a></li>
+                        <li><a href="gerenciar_sangrias.php" target="conteudo">💰 Sangrias</a></li>
                         <li><a href="pedidos.php" target="conteudo">🛒 Pedidos / Vendas</a></li>
                         <?php if ($_SESSION['nivel'] !== 'garcom'): ?>
                             <li><a href="expedicao_manual.php" target="conteudo">🏍️ Expedição Pedido (Motoboy) - Manual</a></li>

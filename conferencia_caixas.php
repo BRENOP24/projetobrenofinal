@@ -41,7 +41,6 @@ if (isset($_POST['btn_confirmar_conferencia'])) {
 }
 
 // --- BUSCA ---
-// Removido o loop redundante e corrigido o SQL para evitar duplicidade de JOIN
 $status_busca = $ver_conferidos ? 'conferido' : 'fechado';
 
 $sql = "
@@ -49,13 +48,17 @@ $sql = "
     FROM controle_caixas c 
     JOIN usuarios u ON c.usuario_id = u.id 
     WHERE c.status = :status
+    AND c.data_fechamento BETWEEN :data_inicio AND :data_fim
     ORDER BY c.data_fechamento DESC
 ";
 $stmt = $pdo->prepare($sql);
-$stmt->execute([':status' => $status_busca]);
+$stmt->execute([
+    ':status'      => $status_busca,
+    ':data_inicio' => $data_inicio . ' 00:00:00',
+    ':data_fim'    => $data_fim . ' 23:59:59'
+]);
 $caixas_brutos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Processamos os totais em um array limpo para evitar erros de referência (&)
 $caixas = [];
 foreach ($caixas_brutos as $item) {
     $id_c = $item['id'];
@@ -69,6 +72,11 @@ foreach ($caixas_brutos as $item) {
     $stmt_saida = $pdo->prepare("SELECT COALESCE(SUM(valor),0) FROM movimentacoes_caixa WHERE id_caixa = ? AND tipo = 'saida'");
     $stmt_saida->execute([$id_c]);
     $item['total_saidas'] = $stmt_saida->fetchColumn();
+
+    // 🔹 SANGRIAS (Adicionado para controle de retiradas)
+    $stmt_sangria = $pdo->prepare("SELECT COALESCE(SUM(valor),0) FROM sangrias WHERE caixa_id = ?");
+    $stmt_sangria->execute([$id_c]);
+    $item['total_sangrias'] = $stmt_sangria->fetchColumn();
 
     $caixas[] = $item;
 }
@@ -100,6 +108,29 @@ foreach ($caixas_brutos as $item) {
         .btn-confirmar { background: #28a745; color: white; border: none; padding: 12px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; }
         .badge-status { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; color: white; }
         .bg-conferido { background: #28a745; }
+        
+        .form-filtros { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; margin-top: 15px; padding-top: 15px; border-top: 1px solid #e9ecef; }
+        .form-grupo { display: flex; flex-direction: column; gap: 5px; }
+        .form-grupo label { font-size: 0.85rem; font-weight: bold; color: #495057; }
+        .form-controle { padding: 6px 12px; border: 1px solid #ced4da; border-radius: 6px; font-family: inherit; font-size: 0.9rem; color: #495057; background-color: #fff; }
+        
+        .btn-filtrar { 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            padding: 8px 18px; 
+            border-radius: 6px; 
+            font-weight: 600; 
+            font-size: 0.85rem;
+            cursor: pointer; 
+            transition: background 0.2s ease, transform 0.1s ease;
+            height: 35px; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-filtrar:hover { background: #0056b3; }
+        .btn-filtrar:active { transform: scale(0.98); }
     </style>
 </head>
 <body>
@@ -115,26 +146,40 @@ foreach ($caixas_brutos as $item) {
             <h3 style="margin:0; font-size: 1.1rem; color: #333;">
                 <?= $ver_conferidos ? "✅ Histórico de Caixas Conferidos" : "📥 Caixas Aguardando Conferência" ?>
             </h3>
-            <a href="<?= $ver_conferidos ? 'conferencia_caixas.php' : 'conferencia_caixas.php?ver_conferidos=1' ?>" style="text-decoration:none; color:#007bff; font-weight:bold;">
+            <a href="<?= $ver_conferidos ? 'conferencia_caixas.php?data_inicio='.$data_inicio.'&data_fim='.$data_fim : 'conferencia_caixas.php?ver_conferidos=1&data_inicio='.$data_inicio.'&data_fim='.$data_fim ?>" style="text-decoration:none; color:#007bff; font-weight:bold;">
                 <?= $ver_conferidos ? "⬅ Ver Pendentes" : "🔎 Ver Histórico" ?>
             </a>
         </div>
+
+        <form method="GET" class="form-filtros">
+            <?php if($ver_conferidos): ?>
+                <input type="hidden" name="ver_conferidos" value="1">
+            <?php endif; ?>
+            
+            <div class="form-grupo">
+                <label for="data_inicio">Data Inicial</label>
+                <input type="date" name="data_inicio" id="data_inicio" class="form-controle" value="<?= htmlspecialchars($data_inicio) ?>">
+            </div>
+
+            <div class="form-grupo">
+                <label for="data_fim">Data Final</label>
+                <input type="date" name="data_fim" id="data_fim" class="form-controle" value="<?= htmlspecialchars($data_fim) ?>">
+            </div>
+
+            <button type="submit" class="btn-filtrar">🔍 Filtrar</button>
+        </form>
     </div>
 
     <?php if (empty($caixas)): ?>
-        <p style="text-align:center; color:#666;">Nenhum caixa encontrado para este status.</p>
+        <p style="text-align:center; color:#666;">Nenhum caixa encontrado para este período.</p>
     <?php endif; ?>
 
-
     <?php foreach ($caixas as $caixa): 
-        // Decodifica o que o operador informou no fechamento
         $informado = json_decode($caixa['observacao_adm'], true); 
 
-        // 2. CORRIGIDO: Busca VENDAS tanto da tabela manual (pedidos) quanto do site (pedidos_online)
         $sql_vendas = "
             SELECT forma_id, nome_pagto, SUM(valor_total) as total 
             FROM (
-                -- Vendas Manuais da Loja Física
                 SELECT p.forma_pagamento_id as forma_id, f.descricao as nome_pagto, p.valor_total 
                 FROM pedidos p 
                 JOIN formas_pagamento f ON p.forma_pagamento_id = f.id 
@@ -142,7 +187,6 @@ foreach ($caixas_brutos as $item) {
                 
                 UNION ALL
                 
-                -- Vendas Online vindas do Painel do Site
                 SELECT po.forma_pagamento_id as forma_id, f.descricao as nome_pagto, po.valor_total 
                 FROM pedidos_online po 
                 JOIN formas_pagamento f ON po.forma_pagamento_id = f.id 
@@ -158,7 +202,6 @@ foreach ($caixas_brutos as $item) {
         ]);
         $vendas_banco = $stmt_v->fetchAll(PDO::FETCH_ASSOC);
 
-        // Busca RECEBIMENTOS
         $sql_receber = "SELECT f.descricao as nome_pagto, SUM(cr.valor_total) as total 
                         FROM contas_receber cr 
                         JOIN formas_pagamento f ON cr.id_forma_pagamento = f.id 
@@ -169,6 +212,7 @@ foreach ($caixas_brutos as $item) {
         $receber_banco = $stmt_r->fetchAll(PDO::FETCH_ASSOC);
 
         $total_saidas = (float)$caixa['total_saidas'];
+        $total_sangrias = (float)$caixa['total_sangrias'];
 
         $sistema = ['dinheiro' => 0, 'pix' => 0, 'credito' => 0, 'debito' => 0];
         $total_vendas_prazo = 0;
@@ -186,9 +230,7 @@ foreach ($caixas_brutos as $item) {
             elseif (str_contains($nome, 'debito')) $sistema['debito'] += $venda['total'];
         }
 
-        $total_titulos_recebidos = 0;
         foreach ($receber_banco as $rec) {
-            $total_titulos_recebidos += $rec['total'];
             $nome = mb_strtolower($rec['nome_pagto']);
             if (str_contains($nome, 'dinheiro')) $sistema['dinheiro'] += $rec['total'];
             elseif (str_contains($nome, 'pix')) $sistema['pix'] += $rec['total'];
@@ -222,6 +264,12 @@ foreach ($caixas_brutos as $item) {
                 ];
                 foreach ($meios as $chave => $label): 
                     $v_sist = (float)($sistema[$chave] ?? 0);
+                    
+                    // Se for dinheiro, o valor esperado no caixa físico é: Vendas + Fundo de Reserva - Sangrias
+                    if ($chave === 'dinheiro') {
+                        $v_sist = $v_sist + (float)$caixa['valor_inicial'] - $total_sangrias;
+                    }
+                    
                     $v_inf = (float)($informado[$chave] ?? 0);
                     $diff = $v_inf - $v_sist;
                 ?>
@@ -243,8 +291,8 @@ foreach ($caixas_brutos as $item) {
                 </tr>
 
                 <tr class="linha-receber">
-                    <td><strong>📥 Recebimento de Títulos (Dinheiro Entrando hoje)</strong></td>
-                    <td><strong>+ R$ <?= number_format($total_titulos_recebidos, 2, ',', '.') ?></strong></td>
+                    <td><strong>📥 Recebimento de Títulos (Hoje)</strong></td>
+                    <td><strong>+ R$ <?= number_format((float)array_sum(array_column($receber_banco, 'total')), 2, ',', '.') ?></strong></td>
                     <td>--</td>
                     <td style="font-size: 0.8rem;">Quitação de dívidas</td>
                 </tr>
@@ -254,6 +302,13 @@ foreach ($caixas_brutos as $item) {
                     <td><strong>- R$ <?= number_format($total_saidas, 2, ',', '.') ?></strong></td>
                     <td>--</td>
                     <td style="font-size: 0.8rem;">Saídas do caixa</td>
+                </tr>
+
+                <tr class="linha-saida" style="background: #fff0f0; color: #b83232;">
+                    <td><strong>🚨 Sangrias Efetuadas (Retiradas de segurança)</strong></td>
+                    <td><strong>- R$ <?= number_format($total_sangrias, 2, ',', '.') ?></strong></td>
+                    <td>--</td>
+                    <td style="font-size: 0.8rem; font-weight: bold;">Dinheiro removido da gaveta</td>
                 </tr>
             </tbody>
         </table>
