@@ -1,10 +1,10 @@
 <?php
 
-$host = getenv('DB_HOST') ?: 'dpg-d8rg2vj7uimc73f5pqi0-a.oregon-postgres.render.com';
-$port = getenv('DB_PORT') ?: '5432';
-$db   = getenv('DB_DATABASE') ?: 'projeto_breno_4xjh';
-$user = getenv('DB_USER') ?: 'projeto_breno_4xjh_user';
-$pass = getenv('DB_PASSWORD') ?: 'oos6D62TaTilaY2gBLJKH6WB8TDtdruu';
+$host = '127.0.0.1'; 
+$port = '5432';
+$db   = 'projeto_breno_backup'; 
+$user = 'postgres';
+$pass = 'root'; 
 
 try {
 
