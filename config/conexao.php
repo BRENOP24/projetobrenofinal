@@ -1,8 +1,8 @@
 <?php
 
-$host = '127.0.0.1'; 
+$host = 'localhost'; 
 $port = '5432';
-$db   = 'projeto_breno_backup'; 
+$db   = 'projeto_breno_4xjh'; 
 $user = 'postgres';
 $pass = 'root'; 
 
