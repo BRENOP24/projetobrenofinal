@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: projeto-breno
+    name: projeto_breno_4xjh
     env: docker
     dockerfilePath: Dockerfile
     plan: free
