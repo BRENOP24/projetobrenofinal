@@ -1,9 +1,70 @@
 <?php 
+// --- FORÇAR EXIBIÇÃO DE ERROS NO RENDER PARA DEBUG ---
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
 require_once 'config/sessao.php'; 
 require_once 'config/conexao.php';
 require_once 'config/funcoes.php';
 
+// Credenciais configuradas
+define('CLOUDINARY_CLOUD_NAME', 'dvlh11o6w');
+define('CLOUDINARY_API_KEY', '591916441776592');
+define('CLOUDINARY_API_SECRET', 'SyY1qSVlTc9C1egsVUlfMACCU_g');
+
 $mensagem = "";
+
+// --- FUNÇÃO DE UPLOAD ASSINADO PARA O CLOUDINARY ---
+function uploadParaCloudinary($arquivoTmp) {
+    $timestamp = time();
+    $folder = 'produtos';
+
+    $params = [
+        'folder' => $folder,
+        'timestamp' => $timestamp
+    ];
+    ksort($params);
+
+    $paramsToSign = http_build_query($params);
+    $signature = sha1($paramsToSign . CLOUDINARY_API_SECRET);
+
+    $url = "https://api.cloudinary.com/v1_1/" . CLOUDINARY_CLOUD_NAME . "/image/upload";
+
+    $data = [
+        'file'      => new CURLFile($arquivoTmp),
+        'api_key'   => CLOUDINARY_API_KEY,
+        'timestamp' => $timestamp,
+        'signature' => $signature,
+        'folder'    => $folder
+    ];
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0); 
+
+    $resposta = curl_exec($ch);
+    $erro = curl_error($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($erro) {
+        return ["sucesso" => false, "erro" => "Erro de conexão (cURL): " . $erro];
+    }
+
+    $json = json_decode($resposta, true);
+    
+    if ($http_code !== 200) {
+        $msg_erro = $json['error']['message'] ?? "Erro desconhecido no Cloudinary";
+        return ["sucesso" => false, "erro" => "Cloudinary API [HTTP $http_code]: " . $msg_erro];
+    }
+
+    return ["sucesso" => true, "url" => $json['secure_url']];
+}
 
 // 1. BUSCA OS DADOS DO PRODUTO
 if (isset($_GET['id'])) {
@@ -37,41 +98,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['btn_atualizar'])) {
 
     // Verifica se uma nova imagem foi enviada
     if (isset($_FILES['imagem']) && $_FILES['imagem']['error'] === 0) {
-        $extensao = pathinfo($_FILES['imagem']['name'], PATHINFO_EXTENSION);
-        $novo_nome = md5(uniqid()) . "." . $extensao;
-        $diretorio = "uploads/produtos/";
-
-        if (!is_dir($diretorio)) mkdir($diretorio, 0777, true);
-
-        if (move_uploaded_file($_FILES['imagem']['tmp_name'], $diretorio . $novo_nome)) {
-            // Se subiu a nova com sucesso, podemos apagar a antiga do servidor (opcional)
-            if (!empty($produto['imagem']) && file_exists($diretorio . $produto['imagem'])) {
-                @unlink($diretorio . $produto['imagem']);
-            }
-            $imagem_final = $novo_nome;
+        $resultado = uploadParaCloudinary($_FILES['imagem']['tmp_name']);
+        
+        if ($resultado['sucesso']) {
+            $imagem_final = $resultado['url']; // Guarda a nova URL do Cloudinary
+        } else {
+            $mensagem = "<div style='color:red; padding:10px; background:#f8d7da; border-radius:5px;'>❌ " . htmlspecialchars($resultado['erro']) . "</div>";
         }
     }
 
-    try {
-        $sql = "UPDATE produtos SET 
-                codigo_barras = ?, 
-                nome = ?, 
-                preco_venda = ?, 
-                estoque = ?, 
-                categoria_id = ?, 
-                aparecer_online = ?, 
-                descricao = ?,
-                unidade_medida = ?,
-                imagem = ?
-                WHERE id = ?";
-        
-        $stmt = $pdo->prepare($sql);
-        if ($stmt->execute([$codigo_barras, $nome, $preco, $estoque, $categoria, $online, $descricao, $unidade, $imagem_final, $id_edit])) {
-            header("Location: produtos.php?res=editado");
-            exit;
+    // Só salva se não houver erros de upload
+    if (empty($mensagem)) {
+        try {
+            $sql = "UPDATE produtos SET 
+                    codigo_barras = ?, 
+                    nome = ?, 
+                    preco_venda = ?, 
+                    estoque = ?, 
+                    categoria_id = ?, 
+                    aparecer_online = ?, 
+                    descricao = ?,
+                    unidade_medida = ?,
+                    imagem = ?
+                    WHERE id = ?";
+            
+            $stmt = $pdo->prepare($sql);
+            if ($stmt->execute([$codigo_barras, $nome, $preco, $estoque, $categoria, $online, $descricao, $unidade, $imagem_final, $id_edit])) {
+                
+                if (function_exists('registrarLog')) {
+                    $detalhes = "Editou o produto: {$nome} | Cód: {$codigo_barras} | Imagem alterada/mantida.";
+                    registrarLog($pdo, 'ALTERACAO', 'produtos', $detalhes);
+                }
+
+                header("Location: produtos.php?res=editado");
+                exit;
+            }
+        } catch (PDOException $e) {
+            $mensagem = "<div style='color:red; padding:10px; background:#f8d7da; border-radius:5px;'>Erro ao atualizar: " . $e->getMessage() . "</div>";
         }
-    } catch (PDOException $e) {
-        $mensagem = "<div style='color:red; padding:10px; background:#f8d7da; border-radius:5px;'>Erro ao atualizar: " . $e->getMessage() . "</div>";
     }
 }
 
@@ -166,7 +230,11 @@ $categorias = $pdo->query("SELECT * FROM categorias ORDER BY nome ASC")->fetchAl
                 <?php if(!empty($produto['imagem'])): ?>
                 <div style="text-align: center;">
                     <label><strong>Imagem Atual:</strong></label><br>
-                    <img src="uploads/produtos/<?= $produto['imagem'] ?>" style="width: 100px; height: 100px; object-fit: cover; border: 1px solid #ddd; border-radius: 8px; margin-top: 5px;">
+                    <?php 
+                        // COMPATIBILIDADE: Se começar com http é Cloudinary, senão é pasta local
+                        $src_imagem = (strpos($produto['imagem'], 'http') === 0) ? $produto['imagem'] : 'uploads/produtos/' . $produto['imagem'];
+                    ?>
+                    <img src="<?= $src_imagem ?>" style="width: 100px; height: 100px; object-fit: cover; border: 1px solid #ddd; border-radius: 8px; margin-top: 5px;">
                 </div>
                 <?php endif; ?>
             </div>

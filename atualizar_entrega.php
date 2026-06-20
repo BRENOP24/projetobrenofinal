@@ -3,75 +3,59 @@ header('Content-Type: application/json');
 require_once 'config/sessao.php';
 require_once 'config/conexao.php';
 
-$pedido_id  = $_POST['pedido_id'] ?? null;
-$motoboy_id = $_POST['motoboy_id'] ?? null;
-$origem     = $_POST['origem'] ?? null; 
+// Captura o input JSON enviado pelo JavaScript
+$json = file_get_contents('php://input');
+$dados = json_decode($json, true);
 
-if (!$pedido_id || !$motoboy_id || !$origem) {
+// Valida a estrutura (Lote ou Individual)
+if (!$dados || empty($dados['motoboy_id']) || empty($dados['pedidos']) || !is_array($dados['pedidos'])) {
     echo json_encode(['status' => 'erro', 'msg' => 'Dados incompletos (Faltando ID, Motoboy ou Origem)']);
     exit;
 }
+
+$motoboy_id = $dados['motoboy_id'];
+$pedidos    = $dados['pedidos']; 
 
 try {
     $pdo->beginTransaction();
 
     // =======================================================
-    // [TRAVA DO CAIXA] Busca se existe um caixa 'aberto'
+    // QUERIES LOGÍSTICAS (ATUALIZA APENAS O MOTOBOY)
     // =======================================================
-    $usuario_id = $_SESSION['usuario_id'] ?? null;
-    
-    // Tenta buscar primeiro o caixa do usuário logado, se não achar, pega o geral aberto
-    if ($usuario_id) {
-        $sql_caixa = "SELECT id FROM controle_caixas WHERE usuario_id = ? AND status = 'aberto' LIMIT 1";
-        $stmt_caixa = $pdo->prepare($sql_caixa);
-        $stmt_caixa->execute([$usuario_id]);
-    } else {
-        $sql_caixa = "SELECT id FROM controle_caixas WHERE status = 'aberto' LIMIT 1";
-        $stmt_caixa = $pdo->query($sql_caixa);
-    }
-    
-    $caixa_ativo = $stmt_caixa->fetch(PDO::FETCH_ASSOC);
+    // Removemos a alteração de status e a trava/injeção de caixa, já que o pedido já foi faturado
+    $sqlSite    = "UPDATE pedidos_online SET motoboy_id = :moto WHERE id = :pedido";
+    $sqlSistema = "UPDATE pedidos SET motoboy_id = :moto WHERE id = :pedido";
 
-    // Se o caixa estiver fechado, barra na hora e desfaz qualquer início de operação
-    if (!$caixa_ativo) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
+    $stmtSite    = $pdo->prepare($sqlSite);
+    $stmtSistema = $pdo->prepare($sqlSistema);
+
+    // =======================================================
+    // PROCESSAMENTO EM LOTE
+    // =======================================================
+    foreach ($pedidos as $pedido) {
+        $pedido_id = $pedido['id'];
+        $origem    = $pedido['origem'];
+
+        if (strtolower($origem) === 'site') {
+            $stmtSite->execute([
+                ':moto'   => $motoboy_id, 
+                ':pedido' => $pedido_id
+            ]);
+        } else {
+            $stmtSistema->execute([
+                ':moto'   => $motoboy_id, 
+                ':pedido' => $pedido_id
+            ]);
         }
-        echo json_encode(['status' => 'erro', 'msg' => 'O caixa está fechado! Você precisa abrir o caixa para poder finalizar pedidos e computar os valores.']);
-        exit;
     }
 
-    $id_caixa = (int)$caixa_ativo['id'];
-
-    // =======================================================
-    // ATUALIZAÇÃO DOS PEDIDOS COM ID_CAIXA
-    // =======================================================
-    if (strtolower($origem) === 'site') {
-        // Atualiza a tabela do site (pedidos_online) - Injetando o id_caixa
-        $sql = "UPDATE pedidos_online SET motoboy_id = :moto, status = 'Finalizado', id_caixa = :caixa WHERE id = :pedido";
-    } else {
-        // Atualiza a tabela manual (pedidos) - Injetando o id_caixa
-        $sql = "UPDATE pedidos SET motoboy_id = :moto, status = 'finalizado', id_caixa = :caixa WHERE id = :pedido";
-    }
-
-    $stmt = $pdo->prepare($sql);
-    $resultado = $stmt->execute([
-        ':moto' => $motoboy_id, 
-        ':pedido' => $pedido_id,
-        ':caixa' => $id_caixa
-    ]);
-
-    if ($resultado) {
-        $pdo->commit();
-        echo json_encode(['status' => 'sucesso']);
-    } else {
-        $pdo->rollBack();
-        echo json_encode(['status' => 'erro', 'msg' => 'Erro ao atualizar banco']);
-    }
+    // Grava as alterações logísticas de uma só vez
+    $pdo->commit();
+    echo json_encode(['status' => 'sucesso']);
 
 } catch (Exception $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    echo json_encode(['status' => 'erro', 'msg' => $e->getMessage()]);
+    echo json_encode(['status' => 'erro', 'msg' => 'Erro no servidor: ' . $e->getMessage()]);
 }
