@@ -2,7 +2,7 @@
 
 $host = getenv('DB_HOST') ?: 'localhost';
 $port = getenv('DB_PORT') ?: '5432';
-$db   = getenv('DB_DATABASE') ?: 'projeto_breno';
+$db   = getenv('DB_DATABASE') ?: 'projeto_breno_4xjh';
 $user = getenv('DB_USER') ?: 'postgres';
 $pass = getenv('DB_PASSWORD') ?: 'root';
 
